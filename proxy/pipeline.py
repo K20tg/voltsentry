@@ -1,25 +1,30 @@
-"""Per-frame detection pipeline: parse -> update state -> run rules -> emit.
+"""Per-frame detection pipeline: parse -> update state -> score -> emit + verdict.
 
-Sits between raw transport (main.py) and the pure logic (ocpp/state/rules). It
-holds no sockets and no globals: main.py passes in the shared ProxyState, the
-OscillationDetector and an async `broadcast` callback, which keeps this glue
-unit-testable and main.py transport-only (BRIEF.md).
+Sits between raw transport (main.py) and the pure logic (ocpp/state/rules/
+ml_engine). It holds no sockets: main.py passes in the shared ProxyState, the
+OscillationDetector and an async `broadcast` callback, and acts on the returned
+Verdict. That keeps this glue unit-testable and main.py transport-only (BRIEF).
 
-H5 behaviour: detect, log and broadcast ThreatEvents. It does not yet sever or
-drop the offending frame — active quarantine is H6.
+H6/H7 behaviour:
+  * emit a real TelemetryEvent per MeterValues (feature vector from ml_engine)
+  * on a forged-data rule, arm active quarantine: the offending frame is dropped
+    and main.py sends ChangeAvailability downstream, then closes 4001 on the ack
 """
 
 from __future__ import annotations
 
 import time
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
-from shared.schemas import ThreatEvent
+from shared.schemas import StationStatus, TelemetryEvent, ThreatEvent
 from proxy import ocpp, rules
 from proxy.state import ProxyState
 
-Broadcast = Callable[[ThreatEvent], Awaitable[None]]
+# broadcast takes any feed schema model (Telemetry / Threat / Grid).
+Broadcast = Callable[[Any], Awaitable[None]]
 
 INCIDENTS_LOG = Path(__file__).resolve().parent.parent / "logs" / "incidents.jsonl"
 
@@ -28,7 +33,19 @@ INCIDENTS_LOG = Path(__file__).resolve().parent.parent / "logs" / "incidents.jso
 THROTTLE = rules.ThreatThrottle()
 
 
-def build_threat(cpid: str, violation: rules.RuleViolation, raw_frame: Optional[str]) -> ThreatEvent:
+@dataclass
+class Verdict:
+    """What transport should do with the frame just inspected."""
+
+    forward: bool = True                    # relay it upstream to the CSMS?
+    start_quarantine: bool = False          # send ChangeAvailability downstream
+    change_availability_uid: Optional[str] = None
+    close: bool = False                     # close the charger socket with 4001
+
+
+def build_threat(
+    cpid: str, violation: rules.RuleViolation, raw_frame: Optional[str], action_taken: str
+) -> ThreatEvent:
     """Turn a RuleViolation into a Tier-1 ThreatEvent (never a hand-built dict)."""
     return ThreatEvent(
         station_id=cpid,
@@ -37,7 +54,7 @@ def build_threat(cpid: str, violation: rules.RuleViolation, raw_frame: Optional[
         rule_id=violation.rule_id,
         severity=violation.severity,
         reason=violation.reason,
-        action_taken="logged",
+        action_taken=action_taken,
         raw_frame=raw_frame,
     )
 
@@ -53,13 +70,43 @@ async def raise_threat(
     violation: rules.RuleViolation,
     raw_frame: Optional[str],
     broadcast: Broadcast,
+    action_taken: str = "logged",
 ) -> None:
     key = rules.throttle_key(cpid, violation.rule_id)
     if not THROTTLE.should_emit(key, violation.rule_id, time.time()):
         return
-    event = build_threat(cpid, violation, raw_frame)
-    print(f"[proxy] THREAT {cpid} {violation.rule_id}: {violation.reason}", flush=True)
+    event = build_threat(cpid, violation, raw_frame, action_taken)
+    print(f"[proxy] THREAT {cpid} {violation.rule_id} ({action_taken}): {violation.reason}", flush=True)
     _log_incident(event)
+    await broadcast(event)
+
+
+async def _emit_telemetry(state: ProxyState, cpid: str, mv: dict, broadcast: Broadcast) -> None:
+    """Fold a MeterValues into state and broadcast a TelemetryEvent."""
+    station = state.station(cpid)
+    feats = station.record_meter_sample(
+        power_kw=mv["power_kw"],
+        soc=mv["soc"],
+        energy_register_kwh=mv["energy_register_kwh"],
+        ts=time.time(),
+    )
+    try:
+        event = TelemetryEvent(
+            station_id=cpid,
+            transaction_id=station.transaction_id,
+            ts=time.time(),
+            power_kw=feats.power_kw,
+            soc=min(100.0, max(0.0, feats.soc)),  # schema bounds; a spoof may lie
+            dp_dt=feats.dp_dt,
+            duration_sec=feats.duration_sec,
+            energy_register_kwh=mv["energy_register_kwh"],
+            energy_residual_kwh=feats.energy_residual_kwh,
+            status=station.status,
+            ml_score=0.0,  # Tier-2 scoring is H11
+        )
+    except Exception as exc:  # never let one bad frame kill the feed
+        print(f"[proxy] {cpid} telemetry build failed: {exc}", flush=True)
+        return
     await broadcast(event)
 
 
@@ -69,16 +116,29 @@ async def inspect_upstream(
     cpid: str,
     raw: str,
     broadcast: Broadcast,
-) -> None:
-    """Run Tier-1 rules on a charger->CSMS frame and advance session state."""
+) -> Verdict:
+    """Score a charger->CSMS frame, emit telemetry/threats, return a Verdict."""
+    # Mid-quarantine: drop everything, and close once the ChangeAvailability ack
+    # comes back from the charger.
+    pending_uid = state.quarantine_ack_pending.get(cpid)
+    if pending_uid is not None:
+        try:
+            frame = ocpp.parse_frame(raw)
+        except ValueError:
+            return Verdict(forward=False)
+        if frame.message_type_id == ocpp.CALLRESULT and frame.unique_id == pending_uid:
+            state.quarantine_ack_pending.pop(cpid, None)
+            return Verdict(forward=False, close=True)
+        return Verdict(forward=False)
+
     try:
         frame = ocpp.parse_frame(raw)
     except ValueError as exc:
         print(f"[proxy] {cpid} unparseable frame: {exc}", flush=True)
-        return
+        return Verdict(forward=True)  # stay a transparent relay for junk we can't read
 
     if frame.message_type_id != ocpp.CALL:
-        return  # only CALLs from a charger carry something to score
+        return Verdict(forward=True)
 
     state.note_pending(cpid, frame.unique_id, frame.action)
     action = frame.action
@@ -87,19 +147,31 @@ async def inspect_upstream(
     if action == "Authorize":
         state.apply_authorize(cpid)
     elif action == "MeterValues":
-        for violation in (
+        mv = ocpp.extract_meter_values(frame.payload or {})
+        await _emit_telemetry(state, cpid, mv, broadcast)
+
+        quarantine_uid: Optional[str] = None
+        violations = [
             rules.check_state_order(station, action),
             rules.check_txn_integrity(state, cpid, (frame.payload or {}).get("transactionId")),
-        ):
-            if violation:
-                await raise_threat(cpid, violation, raw, broadcast)
-        mv = ocpp.extract_meter_values(frame.payload or {})
-        phys = rules.check_physics(mv["power_kw"], mv["soc"])
-        if phys:
-            await raise_threat(cpid, phys, raw, broadcast)
+            rules.check_physics(mv["power_kw"], mv["soc"]),
+        ]
+        for violation in violations:
+            if not violation:
+                continue
+            quarantine = rules.should_quarantine(violation.rule_id)
+            await raise_threat(
+                cpid, violation, raw, broadcast,
+                action_taken="quarantined" if quarantine else "logged",
+            )
+            if quarantine and quarantine_uid is None:
+                quarantine_uid = uuid.uuid4().hex
+                state.quarantine(cpid)
+                state.quarantine_ack_pending[cpid] = quarantine_uid
+
+        if quarantine_uid is not None:
+            return Verdict(forward=False, start_quarantine=True, change_availability_uid=quarantine_uid)
     elif action in ("StartTransaction", "StopTransaction"):
-        # Decide before mutating state: apply_stop_transaction moves the station
-        # to FINISHING, which is exactly what marks a later Start as a re-start.
         counts = rules.is_oscillation_transition(action, station.status)
         if action == "StopTransaction":
             order = rules.check_state_order(station, action)
@@ -112,6 +184,8 @@ async def inspect_upstream(
             osc = oscillation.check(now)
             if osc:
                 await raise_threat(cpid, osc, raw, broadcast)
+
+    return Verdict(forward=True)
 
 
 def inspect_downstream(state: ProxyState, cpid: str, raw: str) -> None:

@@ -14,10 +14,12 @@ What lives here (BRIEF.md):
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 from shared.schemas import StationStatus
+from proxy.ml_engine import SessionFeatures, compute_session_features
 
 
 @dataclass
@@ -40,10 +42,35 @@ class StationState:
     energy_integral_kwh: float = 0.0
     sample_count: int = 0
 
+    # kW of the last MeterValues, kept for the fleet grid aggregate.
+    last_power_reported_kw: float = 0.0
+
     @property
     def session_live(self) -> bool:
         """True once Authorize -> StartTransaction has completed and not stopped."""
         return self.authorized and self.transaction_id is not None
+
+    def record_meter_sample(
+        self, power_kw: float, soc: float, energy_register_kwh: float, ts: float
+    ) -> SessionFeatures:
+        """Fold one MeterValues into this station's accumulators; return features."""
+        f = compute_session_features(
+            power_kw=power_kw,
+            soc=soc,
+            energy_register_kwh=energy_register_kwh,
+            ts=ts,
+            prev_ts=self.last_ts,
+            prev_power_kw=self.last_power_kw,
+            energy_integral_kwh=self.energy_integral_kwh,
+            session_start_ts=self.session_start_ts,
+            sample_count=self.sample_count,
+        )
+        self.last_ts = ts
+        self.last_power_kw = power_kw
+        self.last_power_reported_kw = power_kw
+        self.energy_integral_kwh = f.energy_integral_kwh
+        self.sample_count = f.sample_count
+        return f
 
 
 class ProxyState:
@@ -54,6 +81,8 @@ class ProxyState:
         self.txn_owner: dict[int, str] = {}       # transactionId -> cpid  (R5)
         self.live_connections: set[str] = set()   # cpids with an open socket (R4)
         self.quarantined: set[str] = set()
+        # cpid -> uniqueId of the ChangeAvailability we sent, awaiting its ack
+        self.quarantine_ack_pending: dict[str, str] = {}
 
     # ---- station lookup -------------------------------------------------
     def station(self, cpid: str) -> StationState:
@@ -80,6 +109,7 @@ class ProxyState:
         st.session_start_ts = None
         st.last_ts = None
         st.last_power_kw = None
+        st.last_power_reported_kw = 0.0
         st.energy_integral_kwh = 0.0
         st.sample_count = 0
 
@@ -113,6 +143,8 @@ class ProxyState:
         st = self.station(cpid)
         st.transaction_id = transaction_id
         st.status = StationStatus.CHARGING
+        if st.session_start_ts is None:
+            st.session_start_ts = time.time()
         self.txn_owner[transaction_id] = cpid
 
     def apply_stop_transaction(self, cpid: str) -> None:
@@ -135,5 +167,21 @@ class ProxyState:
         """Clear one station, or all when cpid is None (attack.py reset)."""
         if cpid is None:
             self.quarantined.clear()
+            self.quarantine_ack_pending.clear()
         else:
             self.quarantined.discard(cpid)
+            self.quarantine_ack_pending.pop(cpid, None)
+
+    # ---- transformer / grid aggregate (CONTEXT.md §5.C, [FIX-12]) --------
+    def grid_snapshot(self) -> tuple[float, int]:
+        """(total_load_kw, active_stations) across the live, charging fleet.
+
+        A quarantined station draws nothing, so it drops out of the aggregate.
+        """
+        total = 0.0
+        active = 0
+        for st in self.stations.values():
+            if st.status == StationStatus.CHARGING and st.cpid not in self.quarantined:
+                total += max(0.0, st.last_power_reported_kw)
+                active += 1
+        return total, active

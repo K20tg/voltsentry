@@ -13,6 +13,7 @@ from proxy.rules import (
     check_session_unique,
     check_state_order,
     is_oscillation_transition,
+    should_quarantine,
     throttle_key,
 )
 from proxy.state import ProxyState
@@ -183,3 +184,19 @@ def test_fleet_wide_r3_emits_once_across_stations():
     assert t.should_emit(throttle_key("CP-03", "R3_OSCILLATION"), "R3_OSCILLATION", now=100.0) is True
     # a second station tripping the same fleet-wide rule is suppressed
     assert t.should_emit(throttle_key("CP-04", "R3_OSCILLATION"), "R3_OSCILLATION", now=100.1) is False
+
+
+# ---------------------------------------------------------- quarantine policy
+# A forged-data rule severs the station (drop frame + ChangeAvailability + 4001).
+# A fleet-wide or transient rule alerts only — quarantining on R3 would sever all
+# 8 stations on an oscillate, and R4 is already rejected at the handshake.
+
+def test_quarantine_on_forged_data_rules():
+    assert should_quarantine("R2_PHYSICS") is True
+    assert should_quarantine("R5_TXN_INTEGRITY") is True
+
+
+def test_no_quarantine_on_fleetwide_or_transient_rules():
+    assert should_quarantine("R3_OSCILLATION") is False
+    assert should_quarantine("R1_STATE_ORDER") is False
+    assert should_quarantine("R4_SESSION_UNIQUE") is False

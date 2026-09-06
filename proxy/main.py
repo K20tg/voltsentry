@@ -4,9 +4,9 @@
   * dashboard feed fan out schema events on ws://localhost:8100/feed
 
 Transport only. Per-frame detection is delegated to pipeline.py; judgement to
-rules.py; memory to state.py (BRIEF.md). This is the H5 relay — it detects,
-logs and broadcasts ThreatEvents but does not yet sever or drop (quarantine is
-H6, real telemetry emission H7).
+rules.py; memory to state.py (BRIEF.md). H6/H7 relay: it detects, emits real
+TelemetryEvent + GridEvent on the feed, and actively quarantines a compromised
+station (ChangeAvailability downstream, then close 4001 on the ack).
 """
 
 from __future__ import annotations
@@ -18,14 +18,20 @@ import websockets
 from websockets.client import connect
 from websockets.server import serve
 
-from shared.schemas import StationStatus, TelemetryEvent
-from proxy import pipeline, rules
+from shared.schemas import GridEvent
+from proxy import ocpp, pipeline, rules
 from proxy.state import ProxyState
 
 INGRESS_HOST, INGRESS_PORT = "localhost", 8000
 CSMS_HOST, CSMS_PORT = "localhost", 9000
 FEED_HOST, FEED_PORT = "localhost", 8100
 OCPP_SUBPROTOCOL = "ocpp1.6"
+
+# The shared 500 kVA transformer (CONTEXT.md §5.C). Treated as kW at unity PF
+# for the headroom figure. Matches GridEvent.transformer_capacity_kva's default.
+TRANSFORMER_CAPACITY_KVA = 500.0
+GRID_TICK_SEC = 1.0
+QUARANTINE_ACK_TIMEOUT_SEC = 3.0  # close anyway if the charger never acks
 
 # Process-wide shared state: one registry for the whole fleet (R3 is fleet-wide,
 # the txn registry spans stations) and one oscillation window.
@@ -66,11 +72,38 @@ def _cpid_from_path(path: str) -> str | None:
     return None
 
 
+async def _quarantine_deadline(charger, cpid: str) -> None:
+    """Close a quarantined charger even if it never acks the ChangeAvailability.
+
+    BRIEF: without this the quarantine would hang mid-demo if the twin doesn't
+    reply. Harmless if the ack path already closed — close() is idempotent.
+    """
+    await asyncio.sleep(QUARANTINE_ACK_TIMEOUT_SEC)
+    if cpid in STATE.quarantine_ack_pending:
+        STATE.quarantine_ack_pending.pop(cpid, None)
+        print(f"[proxy] {cpid} quarantine ack timed out; closing 4001", flush=True)
+        await charger.close(code=4001, reason="quarantined")
+
+
 async def _pump_upstream(charger, csms, cpid: str) -> None:
     async for raw in charger:
-        print(f"[proxy] {cpid} ->csms {raw}", flush=True)
-        await pipeline.inspect_upstream(STATE, OSCILLATION, cpid, raw, FEED.broadcast)
-        await csms.send(raw)
+        verdict = await pipeline.inspect_upstream(STATE, OSCILLATION, cpid, raw, FEED.broadcast)
+        if verdict.start_quarantine:
+            ca = ocpp.serialise_call(
+                "ChangeAvailability",
+                {"connectorId": 1, "type": "Inoperative"},
+                unique_id=verdict.change_availability_uid,
+            )
+            print(f"[proxy] {cpid} QUARANTINE -> ChangeAvailability(Inoperative)", flush=True)
+            await charger.send(ca)
+            asyncio.create_task(_quarantine_deadline(charger, cpid))
+            continue  # drop the offending frame
+        if verdict.close:
+            print(f"[proxy] {cpid} quarantine ack received; closing 4001", flush=True)
+            await charger.close(code=4001, reason="quarantined")
+            return
+        if verdict.forward:
+            await csms.send(raw)
 
 
 async def _pump_downstream(csms, charger, cpid: str) -> None:
@@ -93,7 +126,8 @@ async def _handle_charger(charger) -> None:
         await charger.close(code=4001, reason="duplicate session")
         return
 
-    STATE.reset_session(cpid)  # a new socket is always a new session
+    STATE.reset_session(cpid)       # a new socket is always a new session
+    STATE.clear_quarantine(cpid)    # reconnect un-quarantines (CONTEXT [FIX-7])
     STATE.register_connection(cpid)
     upstream_uri = f"ws://{CSMS_HOST}:{CSMS_PORT}/ocpp/{cpid}"
     print(f"[proxy] {cpid} connected; dialing upstream {upstream_uri}", flush=True)
@@ -134,26 +168,20 @@ async def _handle_feed(ws) -> None:
         print("[proxy] dashboard client disconnected", flush=True)
 
 
-async def _synthetic_ticker() -> None:
-    # P1.3 scaffolding: a synthetic TelemetryEvent/sec so Person 3 has a live
-    # feed before the twin exists. Replaced by real telemetry at H7.
-    soc, t0 = 20.0, time.time()
+async def _grid_ticker() -> None:
+    # Emit the transformer aggregate once a second (CONTEXT.md §5.C, [FIX-12]).
+    # Real per-station telemetry is event-driven off MeterValues in the pipeline.
     while True:
-        await asyncio.sleep(1.0)
-        soc = min(100.0, soc + 0.5)
-        power = 120.0 if soc < 80.0 else max(10.0, 120.0 * (100.0 - soc) / 20.0)
+        await asyncio.sleep(GRID_TICK_SEC)
+        total_load_kw, active = STATE.grid_snapshot()
+        headroom = max(0.0, (TRANSFORMER_CAPACITY_KVA - total_load_kw) / TRANSFORMER_CAPACITY_KVA * 100.0)
         await FEED.broadcast(
-            TelemetryEvent(
-                station_id="CP-01",
-                transaction_id=1041,
+            GridEvent(
                 ts=time.time(),
-                power_kw=power,
-                soc=soc,
-                dp_dt=0.0,
-                duration_sec=time.time() - t0,
-                energy_register_kwh=0.0,
-                energy_residual_kwh=0.0,
-                status=StationStatus.CHARGING,
+                total_load_kw=round(total_load_kw, 2),
+                transformer_capacity_kva=TRANSFORMER_CAPACITY_KVA,
+                headroom_pct=round(headroom, 1),
+                active_stations=active,
             )
         )
 
@@ -163,7 +191,7 @@ async def main() -> None:
             serve(_handle_feed, FEED_HOST, FEED_PORT):
         print(f"[proxy] OCPP ingress ws://{INGRESS_HOST}:{INGRESS_PORT}/ocpp/{{cpid}}", flush=True)
         print(f"[proxy] dashboard feed ws://{FEED_HOST}:{FEED_PORT}/feed", flush=True)
-        await _synthetic_ticker()
+        await _grid_ticker()
 
 
 if __name__ == "__main__":

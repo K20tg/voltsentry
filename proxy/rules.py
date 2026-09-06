@@ -120,6 +120,16 @@ def is_oscillation_transition(action: str, station_status: StationStatus) -> boo
 FLEET_SCOPED_RULES = {"R3_OSCILLATION"}
 _FLEET_KEY = "*fleet*"
 
+# Rules that actively sever the station (CONTEXT.md §5.A [FIX-6]): a station
+# reporting forged data is compromised, so it is quarantined. Fleet-wide (R3)
+# and handshake-time (R4) rules alert only — quarantining on R3 would sever all
+# eight stations on an oscillate, and R4 is already rejected at the handshake.
+QUARANTINE_RULES = {"R2_PHYSICS", "R5_TXN_INTEGRITY"}
+
+
+def should_quarantine(rule_id: str) -> bool:
+    return rule_id in QUARANTINE_RULES
+
 
 def throttle_key(cpid: str, rule_id: str) -> str:
     """Scope key for throttling: fleet-wide rules collapse to a single key.
