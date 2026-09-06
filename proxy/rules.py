@@ -1,0 +1,188 @@
+"""Tier-1 deterministic detection rules (CONTEXT.md §5.B) — pure functions.
+
+Each rule reads state + a frame fact and returns a RuleViolation or None. The
+relay (main.py) turns a RuleViolation into a schema ThreatEvent; keeping the
+rules free of I/O and of the wire schema is what makes them unit-testable.
+
+Trip table (CONTEXT.md §5.B):
+  R1_STATE_ORDER   MeterValues/StopTransaction with no live Authorize->StartTransaction
+  R2_PHYSICS       power_kw > 150.0, or power_kw > 60.0 while soc > 80.0, or power_kw < 0
+  R3_OSCILLATION   >= 6 Start/Stop transitions fleet-wide in a 10 s window
+  R4_SESSION_UNIQUE second handshake for a cpid with a live session
+  R5_TXN_INTEGRITY  MeterValues.transactionId unknown or owned by another cpid
+"""
+
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+from typing import Optional
+
+from shared.schemas import StationStatus
+from proxy.state import ProxyState, StationState
+
+# R2 physics envelope constants (CONTEXT.md §5.B).
+MAX_POWER_KW = 150.0
+CV_TAPER_POWER_KW = 60.0
+CV_TAPER_SOC = 80.0
+
+# Actions that are only legal inside a live session (R1).
+_SESSION_ONLY_ACTIONS = {"MeterValues", "StopTransaction"}
+
+
+@dataclass
+class RuleViolation:
+    """A tripped Tier-1 rule. The relay converts this into a ThreatEvent."""
+
+    rule_id: str
+    severity: str  # "low" | "medium" | "high"
+    reason: str
+
+
+def check_physics(power_kw: float, soc: float) -> Optional[RuleViolation]:
+    """R2 — CC-CV physics envelope."""
+    if power_kw < 0:
+        return RuleViolation(
+            "R2_PHYSICS", "high", f"negative power draw {power_kw:.1f} kW"
+        )
+    if power_kw > MAX_POWER_KW:
+        return RuleViolation(
+            "R2_PHYSICS", "high", f"power {power_kw:.1f} kW exceeds {MAX_POWER_KW:.0f} kW"
+        )
+    if power_kw > CV_TAPER_POWER_KW and soc > CV_TAPER_SOC:
+        return RuleViolation(
+            "R2_PHYSICS",
+            "high",
+            f"power {power_kw:.1f} kW above CV taper at SoC {soc:.0f}%",
+        )
+    return None
+
+
+def check_state_order(station: StationState, action: str) -> Optional[RuleViolation]:
+    """R1 — session-only actions require a live Authorize->StartTransaction."""
+    if action in _SESSION_ONLY_ACTIONS and not station.session_live:
+        return RuleViolation(
+            "R1_STATE_ORDER",
+            "high",
+            f"{action} on {station.cpid} with no live transaction",
+        )
+    return None
+
+
+def check_session_unique(state: ProxyState, cpid: str) -> Optional[RuleViolation]:
+    """R4 — a second handshake while a session is already live for this cpid."""
+    if cpid in state.live_connections:
+        return RuleViolation(
+            "R4_SESSION_UNIQUE",
+            "high",
+            f"duplicate handshake for live station {cpid}",
+        )
+    return None
+
+
+def check_txn_integrity(
+    state: ProxyState, cpid: str, transaction_id: Optional[int]
+) -> Optional[RuleViolation]:
+    """R5 — MeterValues.transactionId must be known and owned by this cpid."""
+    if transaction_id is None:
+        return None
+    owner = state.txn_owner.get(transaction_id)
+    if owner is None:
+        return RuleViolation(
+            "R5_TXN_INTEGRITY", "high", f"unknown transactionId {transaction_id}"
+        )
+    if owner != cpid:
+        return RuleViolation(
+            "R5_TXN_INTEGRITY",
+            "high",
+            f"transactionId {transaction_id} belongs to {owner}, not {cpid}",
+        )
+    return None
+
+
+def is_oscillation_transition(action: str, station_status: StationStatus) -> bool:
+    """R3 — does this frame count as a Start/Stop transition?
+
+    A StopTransaction always does. A StartTransaction only counts when it is a
+    *re-start* (the station just stopped, so it sits in FINISHING) — the second
+    half of an oscillation cycle. The first StartTransaction of a session is not
+    a transition out of charging: counting it would trip R3 on normal fleet
+    startup, where 8 staggered stations start well inside the 10 s window.
+    """
+    if action == "StopTransaction":
+        return True
+    if action == "StartTransaction":
+        return station_status == StationStatus.FINISHING
+    return False
+
+
+# Rules judged across the whole fleet rather than per station (CONTEXT.md §5.B).
+FLEET_SCOPED_RULES = {"R3_OSCILLATION"}
+_FLEET_KEY = "*fleet*"
+
+
+def throttle_key(cpid: str, rule_id: str) -> str:
+    """Scope key for throttling: fleet-wide rules collapse to a single key.
+
+    R3 counts transitions fleet-wide, so an 8-station oscillate would otherwise
+    emit 8 identical badges per window instead of the one real finding.
+    """
+    return _FLEET_KEY if rule_id in FLEET_SCOPED_RULES else cpid
+
+
+class ThreatThrottle:
+    """Collapse a sustained attack into one threat per station per rule.
+
+    A live attack trips its rule on every frame, so an unthrottled oscillate
+    demo emits ~145 identical R3 events in 9 s — it buries the dashboard
+    timeline and the forensic log (AGENTS.md: readable, not a debug firehose).
+    The clock is injected so this is unit-testable.
+    """
+
+    COOLDOWN_SEC = 10.0
+
+    def __init__(self) -> None:
+        self._last: dict[tuple[str, str], float] = {}
+
+    def should_emit(self, cpid: str, rule_id: str, now: float) -> bool:
+        key = (cpid, rule_id)
+        last = self._last.get(key)
+        if last is not None and now - last < self.COOLDOWN_SEC:
+            return False
+        self._last[key] = now
+        return True
+
+    def clear(self) -> None:
+        self._last.clear()
+
+
+class OscillationDetector:
+    """R3 — countable predicate over a sliding window with an injectable clock.
+
+    A "transition" is one StartTransaction or StopTransaction fleet-wide. The
+    relay calls record_transition() on each, then check(now). Restated from
+    v1's untestable ">0.5 Hz" per CONTEXT.md [FIX-8].
+    """
+
+    WINDOW_SEC = 10.0
+    THRESHOLD = 6
+
+    def __init__(self) -> None:
+        self._events: deque[float] = deque()
+
+    def record_transition(self, ts: float) -> None:
+        self._events.append(ts)
+
+    def _prune(self, now: float) -> None:
+        while self._events and now - self._events[0] > self.WINDOW_SEC:
+            self._events.popleft()
+
+    def check(self, now: float) -> Optional[RuleViolation]:
+        self._prune(now)
+        if len(self._events) >= self.THRESHOLD:
+            return RuleViolation(
+                "R3_OSCILLATION",
+                "high",
+                f"{len(self._events)} start/stop transitions in {self.WINDOW_SEC:.0f}s",
+            )
+        return None
