@@ -1,0 +1,14 @@
+---
+trigger: always_on
+description: Personal scope — copy to 99-me.md, gitignored, one per machine
+---
+
+# My scope
+
+Copy this file to `.agents/rules/99-me.md` and edit the line below.
+`99-*.md` is gitignored, so each teammate has their own without collisions.
+
+I am **Person N**. I own `<folder>/`. My detailed brief is `<folder>/BRIEF.md` — read it
+at the start of every task.
+
+When I ask for something that would touch another person's folder, refuse and tell me.

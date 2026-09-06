@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+node_modules/
+.next/
+out/
+logs/*.jsonl
+.DS_Store
+.env
+
+# per-person agent scratch — never commit, this is how we avoid rule collisions
+.agents/rules/99-*.md
+CLAUDE.local.md
+.antigravity/
