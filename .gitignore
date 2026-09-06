@@ -9,6 +9,9 @@ out/
 logs/*.jsonl
 .DS_Store
 .env
+.env*.local
+*.tsbuildinfo
+.claude/scheduled_tasks.lock
 
 # per-person agent scratch — never commit, this is how we avoid rule collisions
 .agents/rules/99-*.md
