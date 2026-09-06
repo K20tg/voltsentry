@@ -265,8 +265,14 @@ class StationTwin:
                         await asyncio.sleep(1.0)
 
             except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError) as e:
-                print(f"{self.prefix} Connection lost ({e}), reconnecting in 2s...", flush=True)
-                await asyncio.sleep(2.0)
+                if self.is_quarantined:
+                    print(f"{self.prefix} Quarantined: waiting for reset signal before reconnecting...", flush=True)
+                    while self.is_quarantined and self.running:
+                        await asyncio.sleep(1.0)
+                    print(f"{self.prefix} Quarantine cleared! Reconnecting to {self.target_url}...", flush=True)
+                else:
+                    print(f"{self.prefix} Connection lost ({e}), reconnecting in 2s...", flush=True)
+                    await asyncio.sleep(2.0)
             except Exception as e:
                 print(f"{self.prefix} Error: {e}, restarting session in 2s...", flush=True)
                 await asyncio.sleep(2.0)
@@ -318,8 +324,6 @@ class FleetManager:
             return ControlAck(ok=False, detail=f"Station {target_id} not found")
 
         elif trigger.attack_type == AttackType.RESET:
-            # Only schedule the reconnect when a loop is running, so the unit
-            # tests can still call apply_trigger() synchronously.
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:

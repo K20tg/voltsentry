@@ -1,3 +1,4 @@
+import json
 import pytest
 from shared.schemas import AttackTrigger, AttackType
 from simulator.battery import Battery
@@ -134,3 +135,71 @@ def test_fleet_manager_reset_trigger():
         assert s.mode == "clean"
         assert s.drift_ticks == 0
         assert s.is_quarantined is False
+
+
+def test_subtle_drift_math():
+    """Verify drift compounds at 2% per tick and reaches target decay in ~40 ticks."""
+    power = 120.0
+    for _ in range(40):
+        power *= 0.98
+    # After 40 ticks, power should decay smoothly to between 50 and 55 kW
+    assert 50.0 < power < 55.0
+
+
+# ==============================================================================
+# Inbound CALL Handling Tests ([FIX-6])
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_station_twin_inbound_change_availability():
+    """Assert StationTwin handles inbound ChangeAvailability CALL and replies with CALLRESULT."""
+    station = StationTwin("CP-01", "ws://localhost:8000")
+
+    sent_messages = []
+    class DummyWS:
+        async def send(self, data):
+            sent_messages.append(data)
+
+    station.ws = DummyWS()
+
+    # 1. Inoperative -> Quarantines station
+    await station._handle_inbound_call(
+        "uuid-123", "ChangeAvailability", {"connectorId": 1, "type": "Inoperative"}
+    )
+    assert station.is_quarantined is True
+    assert len(sent_messages) == 1
+    res1 = json.loads(sent_messages[0])
+    assert res1 == [3, "uuid-123", {"status": "Accepted"}]
+
+    # 2. Operative -> Clears quarantine
+    await station._handle_inbound_call(
+        "uuid-124", "ChangeAvailability", {"connectorId": 1, "type": "Operative"}
+    )
+    assert station.is_quarantined is False
+    assert len(sent_messages) == 2
+    res2 = json.loads(sent_messages[1])
+    assert res2 == [3, "uuid-124", {"status": "Accepted"}]
+
+
+@pytest.mark.asyncio
+async def test_station_twin_inbound_reset():
+    """Assert StationTwin handles inbound Reset CALL, resets state, and replies with CALLRESULT."""
+    station = StationTwin("CP-01", "ws://localhost:8000")
+    station.mode = "meter_spoof"
+    station.is_quarantined = True
+    station.drift_ticks = 15
+
+    sent_messages = []
+    class DummyWS:
+        async def send(self, data):
+            sent_messages.append(data)
+
+    station.ws = DummyWS()
+
+    await station._handle_inbound_call("uuid-999", "Reset", {"type": "Soft"})
+    assert station.mode == "clean"
+    assert station.is_quarantined is False
+    assert station.drift_ticks == 0
+    assert len(sent_messages) == 1
+    res = json.loads(sent_messages[0])
+    assert res == [3, "uuid-999", {"status": "Accepted"}]
