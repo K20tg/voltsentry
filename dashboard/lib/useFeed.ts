@@ -11,10 +11,11 @@ export interface PowerHistoryPoint {
 
 interface UseFeedOptions {
   source?: "fixture" | "live";
+  onThreat?: (threat: ThreatEvent) => void;
 }
 
 export function useFeed(options: UseFeedOptions = {}) {
-  const [mode, setMode] = useState<"fixture" | "live">(options.source || "fixture");
+  const [mode, setMode] = useState<"fixture" | "live">(options.source || "live");
   const [stations, setStations] = useState<Record<string, TelemetryEvent>>({});
   const [grid, setGrid] = useState<GridEvent | null>(null);
   const [threats, setThreats] = useState<ThreatEvent[]>([]);
@@ -24,6 +25,11 @@ export function useFeed(options: UseFeedOptions = {}) {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fixtureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const onThreatRef = useRef(options.onThreat);
+
+  useEffect(() => {
+    onThreatRef.current = options.onThreat;
+  }, [options.onThreat]);
 
   const processEvent = useCallback((event: FeedEvent) => {
     if (event.event === "telemetry") {
@@ -42,14 +48,12 @@ export function useFeed(options: UseFeedOptions = {}) {
       setPowerHistory((prev) => {
         const lastPoint = prev[prev.length - 1];
         if (lastPoint && Math.abs(lastPoint.timestamp - event.ts) < 0.5) {
-          // Same time tick, update station power in existing point
           const updatedPoint: PowerHistoryPoint = {
             ...lastPoint,
             [event.station_id]: event.power_kw,
           };
           return [...prev.slice(0, -1), updatedPoint];
         } else {
-          // New time tick, create new point carrying over latest station values
           const basePoint: PowerHistoryPoint = {
             ...(lastPoint ? { ...lastPoint } : {}),
             time: timeStr,
@@ -63,6 +67,9 @@ export function useFeed(options: UseFeedOptions = {}) {
       setGrid(event);
     } else if (event.event === "threat") {
       setThreats((prev) => [event, ...prev.slice(0, 49)]); // keep latest 50
+      if (onThreatRef.current) {
+        onThreatRef.current(event);
+      }
     }
   }, []);
 
@@ -116,7 +123,7 @@ export function useFeed(options: UseFeedOptions = {}) {
     };
   }, [mode, processEvent]);
 
-  // Live WebSocket mode (ws://localhost:8100/feed)
+  // Live WebSocket mode (ws://localhost:8100/feed) with 2s reconnect backoff
   useEffect(() => {
     if (mode !== "live") return;
 
@@ -125,13 +132,13 @@ export function useFeed(options: UseFeedOptions = {}) {
     const connect = () => {
       if (isCancelled) return;
 
-      console.log("[useFeed] Connecting to ws://localhost:8100/feed...");
+      console.log("[useFeed] Dialing ws://localhost:8100/feed...");
       const ws = new WebSocket("ws://localhost:8100/feed");
       socketRef.current = ws;
 
       ws.onopen = () => {
         if (isCancelled) return;
-        console.log("[useFeed] Live feed connected");
+        console.log("[useFeed] Live feed connected on :8100");
         setIsConnected(true);
       };
 
@@ -141,20 +148,20 @@ export function useFeed(options: UseFeedOptions = {}) {
           const ev: FeedEvent = JSON.parse(messageEvent.data);
           processEvent(ev);
         } catch (e) {
-          console.error("[useFeed] Failed to parse message:", e);
+          console.error("[useFeed] Failed to parse frame:", e);
         }
       };
 
       ws.onclose = () => {
         if (isCancelled) return;
-        console.log("[useFeed] Socket closed. Reconnecting in 2s...");
+        console.log("[useFeed] Connection dropped. Retrying in 2 seconds...");
         setIsConnected(false);
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
       ws.onerror = (err) => {
         if (isCancelled) return;
-        console.error("[useFeed] Socket error:", err);
+        console.error("[useFeed] Socket error on :8100", err);
         ws.close();
       };
     };

@@ -2,79 +2,118 @@
 
 import React, { useEffect, useRef } from "react";
 
-const KEXSIO_COLORS = ["#5227FF", "#FF9FFC", "#B497CF", "#22D3EE"];
+// VoltSentry green/teal palette for the floating lines.
+const LINE_COLORS = ["#0FFF50", "#34D399", "#14B8A6", "#0bcc40"];
 
-export function WaveBackground() {
+interface WaveBackgroundProps {
+  opacity?: number;
+}
+
+interface FloatingLine {
+  x: number;
+  y: number;
+  len: number;
+  angle: number; // radians — near-horizontal with slight drift
+  vx: number;
+  vy: number;
+  alpha: number;
+  width: number;
+  color: string;
+}
+
+/**
+ * Floating-lines background (inspired by Kexsio "bg-floatinglines"): a field of
+ * thin straight line segments drifting slowly across a dark canvas and wrapping
+ * at the edges. Deliberately low-glow — drawn with source-over and low alpha
+ * rather than an additive `screen` blend.
+ */
+export function WaveBackground({ opacity = 0.5 }: WaveBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let animationFrameId: number;
-    let phase = 0;
+    let lines: FloatingLine[] = [];
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const buildLines = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      // Density scales with viewport area; capped so it stays subtle.
+      const count = Math.min(48, Math.round((w * h) / (150000 * dpr)));
+      lines = Array.from({ length: count }, () => {
+        // Mostly shallow angles so the lines read as "floating" streaks.
+        const angle = (Math.random() - 0.5) * 0.5; // ~±14°
+        const speed = (0.15 + Math.random() * 0.45) * dpr;
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        return {
+          x: Math.random() * w,
+          y: Math.random() * h,
+          len: (80 + Math.random() * 260) * dpr,
+          angle,
+          vx: Math.cos(angle) * speed * dir,
+          vy: Math.sin(angle) * speed * dir + (Math.random() - 0.5) * 0.15 * dpr,
+          alpha: 0.08 + Math.random() * 0.22,
+          width: (0.6 + Math.random() * 1.1) * dpr,
+          color: LINE_COLORS[Math.floor(Math.random() * LINE_COLORS.length)],
+        };
+      });
+    };
 
     const updateDimensions = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
+      buildLines();
     };
 
     updateDimensions();
     window.addEventListener("resize", updateDimensions);
 
     const render = () => {
-      const width = canvas.width;
-      const height = canvas.height;
+      const w = canvas.width;
+      const h = canvas.height;
 
-      // Dark background fill
-      ctx.fillStyle = "#020617";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#0a0e0d";
+      ctx.fillRect(0, 0, w, h);
 
-      // Create multi-stop Kexsio gradient
-      const gradient = ctx.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0.0, KEXSIO_COLORS[0]); // #5227FF
-      gradient.addColorStop(0.35, KEXSIO_COLORS[1]); // #FF9FFC
-      gradient.addColorStop(0.7, KEXSIO_COLORS[2]); // #B497CF
-      gradient.addColorStop(1.0, KEXSIO_COLORS[3]); // #22D3EE
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineCap = "round";
 
-      ctx.save();
-      ctx.globalCompositeOperation = "screen";
+      for (const line of lines) {
+        line.x += line.vx;
+        line.y += line.vy;
 
-      // Draw 6 wave lines across the canvas
-      const numWaves = 6;
-      for (let w = 0; w < numWaves; w++) {
+        // Wrap around the edges (account for line length so it re-enters smoothly).
+        const margin = line.len;
+        if (line.x < -margin) line.x = w + margin;
+        if (line.x > w + margin) line.x = -margin;
+        if (line.y < -margin) line.y = h + margin;
+        if (line.y > h + margin) line.y = -margin;
+
+        const x2 = line.x + Math.cos(line.angle) * line.len;
+        const y2 = line.y + Math.sin(line.angle) * line.len;
+
+        // Fade each line along its length for a soft floating feel.
+        const grad = ctx.createLinearGradient(line.x, line.y, x2, y2);
+        grad.addColorStop(0, "rgba(0,0,0,0)");
+        grad.addColorStop(0.5, line.color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+
+        ctx.strokeStyle = grad;
+        ctx.globalAlpha = line.alpha * (opacity / 0.5);
+        ctx.lineWidth = line.width;
         ctx.beginPath();
-        const baseOffsetY = height * (0.35 + w * 0.1);
-        const waveAmplitude = (35 + w * 15) * (height / 1000);
-        const waveFrequency = 0.0015 + w * 0.0004;
-        const wavePhase = phase * (0.8 + w * 0.2) + w * 1.5;
-
-        for (let x = 0; x <= width; x += 4) {
-          const y =
-            baseOffsetY +
-            Math.sin(x * waveFrequency + wavePhase) * waveAmplitude +
-            Math.cos(x * 0.002 - wavePhase * 0.5) * (waveAmplitude * 0.5);
-
-          if (x === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
-          }
-        }
-
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = (2.5 + w * 0.5) * (width / 1920);
-        ctx.globalAlpha = 0.35 - w * 0.04;
+        ctx.moveTo(line.x, line.y);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
       }
 
-      ctx.restore();
-
-      phase += 0.012;
+      ctx.globalAlpha = 1;
       animationFrameId = requestAnimationFrame(render);
     };
 
@@ -82,17 +121,18 @@ export function WaveBackground() {
 
     return () => {
       window.removeEventListener("resize", updateDimensions);
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [opacity]);
 
   return (
     <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
       <canvas ref={canvasRef} className="w-full h-full object-cover" />
-      {/* Dark overlay vignette to ensure high contrast text & cards */}
-      <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]" />
+      {/* Vignette to keep cards/text high-contrast over the lines. */}
+      <div
+        className="absolute inset-0 bg-slate-950 transition-opacity duration-500"
+        style={{ opacity: 1 - opacity }}
+      />
     </div>
   );
 }

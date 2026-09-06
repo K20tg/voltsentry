@@ -2,64 +2,136 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   VoltSentry theme — single source of truth for the black + EV-green palette.
+   Tailwind tokens live in tailwind.config.js (colors.volt.*); these CSS vars
+   mirror them for raw CSS (glass panels, canvases, scrollbars, story sections).
+   ========================================================================== */
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 10, 10, 10;
-  --background-end-rgb: 10, 10, 10;
+  --volt-bg: #0a0e0d;
+  --volt-surface: #101614;
+  --volt-elevated: #16201c;
+  --volt-green: #0FFF50;
+  --volt-green-dim: #0bcc40;
+  --volt-green-deep: #07481f;
+  --volt-line: rgba(15, 255, 80, 0.16);
+  --volt-text: #e6f2ec;
+  --volt-muted: #8aa39a;
+
+  --foreground-rgb: 230, 242, 236;
+  --background-start-rgb: 10, 14, 13;
+  --background-end-rgb: 10, 14, 13;
 }
 
 ::selection {
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(15, 255, 80, 0.3);
   color: #ffffff;
 }
 
+html {
+  scroll-behavior: smooth;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--volt-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 255, 80, 0.5);
+}
+
 body {
-  color: #ffffff;
-  background-color: #0a0a0a;
+  color: var(--volt-text);
+  background-color: var(--volt-bg);
   min-height: 100vh;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glass Material Tokens */
+/* Playful rounded display face for headings + the brand wordmark. */
+h1, h2, h3, .font-display {
+  font-family: var(--font-display), 'Baloo 2', var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ── Glass material tokens (accent recolored blue/purple → green) ── */
 .glass-panel {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background-color: rgba(16, 22, 20, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--volt-line);
+  box-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.55);
 }
 
 .glass-panel-dense {
-  background-color: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(16, 22, 20, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(15, 255, 80, 0.18);
+  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.6);
 }
 
-.glass-badge-left {
-  border-left: 2px solid #ffffff;
-  background-color: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  padding: 0.375rem 0.75rem;
-}
-
+/* Threat card materials keep their SEMANTIC colors — rose = Tier-1 rule
+   violation, amber = Tier-2 ML anomaly. These are status signals, not brand
+   accent, so they intentionally stay red/amber. */
 .glass-card-threat-tier1 {
-  background-color: rgba(244, 63, 94, 0.15);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(244, 63, 94, 0.4);
-  box-shadow: 0 0 20px rgba(244, 63, 94, 0.25);
+  background-color: rgba(88, 28, 28, 0.5);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.16);
 }
 
 .glass-card-threat-tier2 {
-  background-color: rgba(245, 158, 11, 0.15);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+  background-color: rgba(120, 53, 15, 0.5);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.16);
 }
 
-/* Vignette overlay */
-.bg-radial-vignette {
-  background: radial-gradient(circle at center, transparent 30%, rgba(10, 10, 10, 0.8) 100%);
+/* ============================================================================
+   Scroll-story primitives (used by StoryLanding.tsx).
+   Reveal-on-scroll is driven by IntersectionObserver toggling [data-visible].
+   ========================================================================== */
+.story-reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.story-reveal[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+.story-reveal-delay-1 { transition-delay: 0.08s; }
+.story-reveal-delay-2 { transition-delay: 0.16s; }
+.story-reveal-delay-3 { transition-delay: 0.24s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .story-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  html { scroll-behavior: auto; }
+}
+
+/* Big pinned stat numeral — subtle glow only */
+.stat-numeral {
+  color: var(--volt-green);
+  text-shadow: 0 0 12px rgba(15, 255, 80, 0.2);
+}
+
+/* Thin animated connective line used between story flow nodes */
+.flow-line {
+  background: linear-gradient(90deg, transparent, var(--volt-green), transparent);
 }

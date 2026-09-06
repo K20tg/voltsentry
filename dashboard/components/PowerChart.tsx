@@ -14,14 +14,14 @@ import {
 import { PowerHistoryPoint } from "../lib/useFeed";
 
 const STATION_COLORS: Record<string, string> = {
-  "CP-01": "#06B6D4", // Cyan
-  "CP-02": "#10B981", // Emerald
-  "CP-03": "#F43F5E", // Rose
-  "CP-04": "#F59E0B", // Amber
-  "CP-05": "#3B82F6", // Blue
-  "CP-06": "#8B5CF6", // Purple
-  "CP-07": "#EC4899", // Pink
-  "CP-08": "#14B8A6", // Teal
+  "CP-01": "#0FFF50", // volt green
+  "CP-02": "#34D399", // emerald
+  "CP-03": "#14B8A6", // teal
+  "CP-04": "#A3E635", // lime
+  "CP-05": "#22D3EE", // cyan-teal
+  "CP-06": "#0bcc40", // deep green
+  "CP-07": "#6EE7B7", // mint
+  "CP-08": "#84CC16", // olive-lime
 };
 
 const STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
@@ -35,7 +35,7 @@ export function PowerChart({ data }: PowerChartProps) {
     <div className="w-full h-72 p-4 rounded-2xl glass-panel flex flex-col justify-between">
       <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-2">
         <div className="flex items-center space-x-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="w-2.5 h-2.5 rounded-full bg-volt-green animate-pulse" />
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono">
             Fleet Real-Time Active Power (Rolling 60s)
           </h3>

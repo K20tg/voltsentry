@@ -28,24 +28,24 @@ export function TransformerGauge({ grid }: TransformerGaugeProps) {
         <div className="flex items-center space-x-2">
           <Icon3DTransformer className="w-6 h-6" />
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono">
-            Substation Transformer Gauge
+            Substation Load Capacity
           </h3>
         </div>
         <span className="text-xs font-mono text-slate-400">
-          Capacity: <span className="text-slate-200 font-bold">{capacity} kVA</span>
+          Max Limit: <span className="text-slate-200 font-bold">{capacity} kVA</span>
         </span>
       </div>
 
       {/* Main Load Readout */}
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Active Load</div>
+          <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Current Power Usage</div>
           <div className="text-3xl font-black font-mono text-white mt-0.5">
             {load.toFixed(1)} <span className="text-sm text-slate-400 font-normal">kW</span>
           </div>
         </div>
         <div className="text-right font-mono">
-          <div className="text-xs text-slate-400">Headroom</div>
+          <div className="text-xs text-slate-400">Available Reserve</div>
           <div className={`text-xl font-bold ${getGaugeColor().split(" ")[1]}`}>
             {headroom.toFixed(1)}%
           </div>
@@ -62,16 +62,16 @@ export function TransformerGauge({ grid }: TransformerGaugeProps) {
         </div>
         <div className="flex justify-between text-[11px] font-mono text-slate-400">
           <span>0 kVA</span>
-          <span>{loadPct.toFixed(1)}% Utilised</span>
+          <span>{loadPct.toFixed(1)}% Capacity Used</span>
           <span>{capacity} kVA</span>
         </div>
       </div>
 
       {/* Footer stats */}
       <div className="pt-2 border-t border-white/10 flex justify-between text-xs font-mono text-slate-300">
-        <span>Active Chargers: <strong className="text-cyan-300">{activeStations} / 8</strong></span>
-        <span>Status: <strong className={headroom < 15 ? "text-amber-400 animate-pulse" : "text-emerald-400"}>
-          {headroom < 10 ? "CRITICAL HEADROOM" : headroom < 20 ? "HIGH LOAD" : "NOMINAL"}
+        <span>Active Chargers: <strong className="text-volt-green">{activeStations} / 8</strong></span>
+        <span>Grid Health: <strong className={headroom < 15 ? "text-amber-400 animate-pulse" : "text-emerald-400"}>
+          {headroom < 10 ? "HIGH OVERLOAD RISK" : headroom < 20 ? "HIGH POWER DEMAND" : "NORMAL OPERATION"}
         </strong></span>
       </div>
     </div>
