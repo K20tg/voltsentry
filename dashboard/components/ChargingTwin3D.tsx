@@ -104,10 +104,15 @@ function deriveState(
   latest: { threat: ThreatEvent; seenAt: number } | undefined
 ): BayState {
   if (!telemetry) return "idle";
+  // Live status is the source of truth. Once reset reconnects the station, fresh
+  // telemetry arrives as Charging and the bay must return to green.
   if (telemetry.status === "Quarantined") return "quarantined";
-  if (latest?.threat.action_taken === "quarantined") return "quarantined";
 
   const isRecent = latest ? Date.now() - latest.seenAt < ATTACK_HOLD_MS : false;
+  // Bridge only the brief window between the quarantine threat and telemetry
+  // flipping to Quarantined — recency-gated, or a stale threat would pin the bay
+  // red forever and reset would look like a no-op.
+  if (isRecent && latest?.threat.action_taken === "quarantined") return "quarantined";
   if (isRecent && latest?.threat.tier === 1) return "attack";
   if (telemetry.ml_score > ML_THRESHOLD) return "anomaly";
   if (isRecent && latest?.threat.tier === 2) return "anomaly";
