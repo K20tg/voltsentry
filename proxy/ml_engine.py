@@ -131,9 +131,11 @@ def generate_baseline(n: int = BASELINE_N, seed: int = RANDOM_STATE) -> np.ndarr
 class Tier2Model:
     """IsolationForest scorer with the pinned normalisation (CONTEXT.md §5.B).
 
-    `decision_function` returns *higher = more normal* on an unbounded raw scale,
-    so a bare threshold means nothing across processes. Normalisation is pinned
-    at fit time against the baseline:
+    A plain container: the fitted forest plus the two normalisation anchors
+    frozen at fit time. Build one with `fit_tier2(X)`; persist with `save` /
+    `load` (joblib). `decision_function` returns *higher = more normal* on an
+    unbounded raw scale, so a bare threshold means nothing across processes.
+    Normalisation is pinned at fit time:
 
         d      = clf.decision_function(X_train)
         d_max  = d.max()
@@ -143,20 +145,72 @@ class Tier2Model:
     Deterministic given random_state=42. Alert when score > 0.65.
     """
 
-    def __init__(self) -> None:
-        X = generate_baseline()
-        self.clf = IsolationForest(
-            n_estimators=N_ESTIMATORS,
-            contamination=CONTAMINATION,
-            random_state=RANDOM_STATE,
-        ).fit(X)
-        d = self.clf.decision_function(X)
-        self._d_max = float(d.max())
-        self._d_min = float(np.percentile(d, 0.5))
-        # Degenerate baseline (all-equal scores) — avoid a zero-width divide.
+    def __init__(self, clf: IsolationForest, d_max: float, d_min: float) -> None:
+        self.clf = clf
+        self._d_max = float(d_max)
+        self._d_min = float(d_min)
+        # Degenerate training set (all-equal scores) — avoid a zero-width divide.
         self._span = max(self._d_max - self._d_min, 1e-9)
 
     def score(self, vector: Sequence[float]) -> float:
         """Normalised anomaly score in [0, 1]; > 0.65 is an alert."""
         raw = float(self.clf.decision_function([list(vector)])[0])
         return float(np.clip((self._d_max - raw) / self._span, 0.0, 1.0))
+
+    def save(self, path) -> None:
+        from pathlib import Path
+
+        import joblib
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({"clf": self.clf, "d_max": self._d_max, "d_min": self._d_min}, path)
+
+    @classmethod
+    def load(cls, path) -> "Tier2Model":
+        import joblib
+
+        blob = joblib.load(path)
+        return cls(blob["clf"], blob["d_max"], blob["d_min"])
+
+
+def fit_tier2(X: np.ndarray, seed: int = RANDOM_STATE) -> Tier2Model:
+    """Fit the pinned IsolationForest on X and freeze its score normalisation.
+
+    X is an (n, 5) array of honest feature vectors in the frozen FEATURE_ORDER
+    (real dataset vectors, optionally augmented with `generate_baseline()`).
+    """
+    X = np.asarray(X, dtype=float)
+    clf = IsolationForest(
+        n_estimators=N_ESTIMATORS,
+        contamination=CONTAMINATION,
+        random_state=seed,
+    ).fit(X)
+    d = clf.decision_function(X)
+    return Tier2Model(clf, float(d.max()), float(np.percentile(d, 0.5)))
+
+
+def cusum_residual(
+    residual_series: Sequence[float], k: float = 0.5, h: float = 5.0
+) -> tuple[Optional[int], list[float]]:
+    """One-sided CUSUM on the energy-residual series (offline comparison only).
+
+    NOT wired into the live feed — the dashboard schema is frozen and carries no
+    CUSUM statistic. This exists purely so the benchmark can compare the forest
+    against a classic change detector on the same residual signal.
+
+        S[0] = 0
+        S[t] = max(0, S[t-1] + (r[t] - k))
+        alarm when S[t] > h
+
+    Returns (first alarm index or None, the S series).
+    """
+    s = 0.0
+    series: list[float] = []
+    alarm: Optional[int] = None
+    for i, r in enumerate(residual_series):
+        s = max(0.0, s + (float(r) - k))
+        series.append(s)
+        if alarm is None and s > h:
+            alarm = i
+    return alarm, series
