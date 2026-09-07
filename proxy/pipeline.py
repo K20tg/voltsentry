@@ -23,13 +23,20 @@ from shared.schemas import StationStatus, TelemetryEvent, ThreatEvent
 from proxy import ml_engine, ocpp, rules
 from proxy.state import ProxyState
 
-# Tier-2 behavioural model. Fitted once at import (<0.2 s, CONTEXT.md §1); the
-# pinned seed makes the score reproducible across boots. Cold start: the first
-# two samples of a session are not scored (ml_score=0.0), so a session start
-# never throws a false positive on camera (FIX-10 / BRIEF).
-ML_MODEL = ml_engine.Tier2Model()
+# Tier-2 behavioural model, loaded once at import from the trained artifact
+# (fit on a real dataset by proxy/train_tier2.py). If the pickle is absent the
+# proxy still runs — ml_score just stays 0.0. Cold start: the first two samples
+# of a session are not scored, so a session start never false-positives on
+# camera (FIX-10 / BRIEF).
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "tier2.pkl"
 ML_COLD_START_SAMPLES = 2
 ML_RULE_ID = "ML_ANOMALY"
+
+try:
+    ML_MODEL = ml_engine.Tier2Model.load(MODEL_PATH)
+except Exception:
+    ML_MODEL = None
+    print("[proxy] Tier-2 model not found, ml_score stays 0.0", flush=True)
 
 # broadcast takes any feed schema model (Telemetry / Threat / Grid).
 Broadcast = Callable[[Any], Awaitable[None]]
@@ -96,7 +103,7 @@ def _score_sample(feats) -> float:
     0.0 (BRIEF / FIX-10). From sample 3 on, the fitted forest scores the frozen
     5-dim vector; the residual feature is what climbs on a spoof/drift.
     """
-    if feats.sample_count <= ML_COLD_START_SAMPLES:
+    if feats.sample_count <= ML_COLD_START_SAMPLES or ML_MODEL is None:
         return 0.0
     return ML_MODEL.score(feats.as_vector())
 
