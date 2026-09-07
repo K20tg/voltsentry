@@ -7,6 +7,7 @@ import { useAudioAlert } from "../lib/useAudioAlert";
 import { useVoiceAlert } from "../lib/useVoiceAlert";
 import { StationStatus, TelemetryEvent, ThreatEvent } from "../lib/types";
 import { WaveBackground } from "../components/WaveBackground";
+import { AmbientVideo } from "../components/AmbientVideo";
 import { PowerChart } from "../components/PowerChart";
 import { TransformerGauge } from "../components/TransformerGauge";
 import { ThreatBadge } from "../components/ThreatBadge";
@@ -19,7 +20,9 @@ import { SettingsView } from "../components/SettingsView";
 import {
   Icon3DShield,
 } from "../components/3dIcons";
-import { Play, Volume2, Radio, Zap, Download, ShieldAlert, Hexagon, User, Settings, LayoutDashboard, Globe, Box, Loader2 } from "lucide-react";
+import { Play, Volume2, Radio, Zap, Download, ShieldAlert, User, Settings, LayoutDashboard, Globe, Box, Loader2, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { RequireAuth, useAuth } from "../context/AuthContext";
 
 /**
  * Three.js touches `window` at import time, so the 3D twin must never be part
@@ -30,7 +33,7 @@ const ChargingTwin3D = dynamic(() => import("../components/ChargingTwin3D"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-[540px] rounded-2xl border border-white/10 bg-slate-950 flex flex-col items-center justify-center space-y-3">
-      <Loader2 className="w-8 h-8 text-volt-green animate-spin" />
+      <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
       <span className="font-mono text-xs text-slate-400 tracking-wider">
         INITIALISING WEBGL DIGITAL TWIN...
       </span>
@@ -46,19 +49,19 @@ const ALL_STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-
 function getStatusBadgeStyle(status: StationStatus | undefined) {
   switch (status) {
     case "Charging":
-      return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold";
+      return "bg-state-active/10 text-cyan-300 border-cyan-500/30";
     case "Available":
-      return "bg-volt-green/20 text-volt-green border-volt-green/40 font-semibold";
+      return "bg-state-healthy/10 text-emerald-300 border-emerald-500/30";
     case "Preparing":
-      return "bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold";
+      return "bg-state-warn/10 text-amber-300 border-amber-500/30";
     case "Finishing":
-      return "bg-volt-green/20 text-volt-green border-volt-green/40 font-semibold";
+      return "bg-state-healthy/10 text-emerald-300 border-emerald-500/30";
     case "Quarantined":
-      return "bg-rose-500/30 text-rose-300 border-rose-500/60 animate-pulse font-bold";
+      return "bg-state-critical/10 text-red-300 border-red-500/40";
     case "Offline":
-      return "bg-slate-800/80 text-slate-400 border-slate-700 font-semibold";
+      return "bg-volt-elevated text-volt-muted border-volt-line";
     default:
-      return "bg-slate-800/80 text-slate-400 border-slate-700 font-semibold";
+      return "bg-volt-elevated text-volt-muted border-volt-line";
   }
 }
 
@@ -70,6 +73,13 @@ export default function App() {
   const [loadingMessage, setLoadingMessage] = useState("");
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [waveOpacity] = useState(0.65); // Fixed at 65%
+
+  const router = useRouter();
+  const { operator, logout } = useAuth();
+  const handleSignOut = () => {
+    logout();
+    router.push("/login");
+  };
 
   const { isUnlocked, unlockAudio, playAlert } = useAudioAlert();
   const { isEnabled: voiceEnabled, setIsEnabled: setVoiceEnabled, speakThreat } = useVoiceAlert();
@@ -110,9 +120,13 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col justify-between selection:bg-volt-green selection:text-slate-950">
+    <RequireAuth>
+    <div className="relative min-h-screen bg-volt-bg text-slate-200 font-sans flex flex-col justify-between selection:bg-volt-green/20 selection:text-slate-50">
       {/* Dynamic 3D Kexsio Wave Canvas Background (Fixed at 0.65 Opacity) */}
       <WaveBackground opacity={0.65} />
+
+      {/* Two-phase landing video: full-screen intro splash + persistent ambient loop */}
+      <AmbientVideo />
 
       {/* Loading Screen Overlay */}
       {isLoading && <LoadingScreen message={loadingMessage} />}
@@ -135,9 +149,14 @@ export default function App() {
             onClick={() => navigateTo("landing", "Navigating to VoltSentry Overview...")}
             className="flex items-center space-x-2.5 cursor-pointer group"
           >
-            <Hexagon className="w-6 h-6 text-volt-green stroke-[2] group-hover:rotate-12 transition-transform" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/voltsentry-mark.png"
+              alt="VoltSentry"
+              className="w-7 h-7 rounded-md group-hover:rotate-12 transition-transform"
+            />
             <span className="text-lg font-black tracking-wider uppercase font-mono text-white">
-              VOLTSENTRY <span className="text-volt-green text-xs tracking-normal">AI</span>
+              VOLTSENTRY
             </span>
           </div>
 
@@ -181,23 +200,27 @@ export default function App() {
             </button>
           </div>
 
-          {/* Right Action Items */}
-          <div className="flex items-center space-x-3 font-mono text-xs">
-            {user ? (
-              <button
-                onClick={() => navigateTo("account")}
-                className="px-3 py-1.5 rounded-xl bg-volt-green/20 text-volt-green border border-volt-green/40 font-bold"
-              >
-                {user.name.split(" ")[0]}
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsLoginOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-white text-slate-950 font-extrabold hover:bg-slate-200 transition-all uppercase tracking-wider text-[11px]"
-              >
-                NOC SSO
-              </button>
-            )}
+          {/* Right Action Items — logged-in Operator widget */}
+          <div className="flex items-center space-x-2 font-mono text-xs">
+            <button
+              onClick={() => navigateTo("account")}
+              className="flex items-center gap-2 rounded-xl border border-volt-green/40 bg-volt-green/15 px-3 py-1.5 text-volt-green transition-colors hover:bg-volt-green/25"
+              title="Open operator profile"
+            >
+              <User className="h-3.5 w-3.5" />
+              <span className="font-bold">{(operator?.name ?? "Operator").split(" ")[0]}</span>
+              <span className="rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-volt-green/90">
+                {operator?.employeeId ?? "EMP-—"}
+              </span>
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 font-bold uppercase tracking-wider text-[11px] text-rose-300 transition-colors hover:bg-rose-500/25"
+              title="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -214,7 +237,10 @@ export default function App() {
 
         {/* VIEW 2: ACCOUNT PROFILE */}
         {currentView === "account" && (
-          <AccountView user={user} onLogout={() => setUser(null)} />
+          <AccountView
+            user={operator ? { name: operator.name, email: operator.email } : user}
+            onLogout={handleSignOut}
+          />
         )}
 
         {/* VIEW 3: SYSTEM SETTINGS */}
@@ -231,18 +257,16 @@ export default function App() {
         {currentView === "noc" && (
           <div className="space-y-6 pt-6 pb-16">
             {/* Header / Control Bar */}
-            <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-2xl glass-panel-dense shadow-2xl">
-              <div className="flex items-center space-x-4">
-                <div className="p-2.5 bg-slate-900/90 rounded-xl border border-volt-green/30 shadow-lg shadow-volt-green/20">
-                  <Icon3DShield className="w-10 h-10" />
+            <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-lg glass-panel-dense">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-volt-elevated rounded-md border border-volt-line">
+                  <Icon3DShield className="w-8 h-8" />
                 </div>
                 <div>
-                  <div className="flex items-center space-x-2">
-                    <h1 className="text-2xl font-black tracking-tight text-white">
-                      VOLTSENTRY <span className="text-volt-green font-mono text-xs font-bold tracking-wider ml-2">SECURITY CONSOLE</span>
-                    </h1>
-                  </div>
-                  <p className="text-xs text-slate-300 font-medium mt-0.5">Real-Time Security Monitoring & Threat Protection Console for EV Charging Networks</p>
+                  <h1 className="text-lg font-bold tracking-tight text-slate-100">
+                    VoltSentry <span className="text-volt-muted font-mono text-[11px] font-medium tracking-wide ml-1.5">SECURITY CONSOLE</span>
+                  </h1>
+                  <p className="text-xs text-volt-muted mt-0.5">Real-time threat detection for EV charging networks</p>
                 </div>
               </div>
 
@@ -297,7 +321,7 @@ export default function App() {
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 border border-white/20 text-xs font-semibold transition-all shadow-md"
                   title="Download accumulated ThreatEvent log JSON"
                 >
-                  <Download className="w-3.5 h-3.5 text-volt-green" />
+                  <Download className="w-3.5 h-3.5 text-slate-400" />
                   <span>EXPORT INCIDENT LOGS</span>
                 </button>
               </div>
@@ -310,7 +334,7 @@ export default function App() {
                   onClick={() => setNocTab("all")}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
                     nocTab === "all"
-                      ? "bg-volt-green/20 text-volt-green border border-volt-green/40 shadow-sm"
+                      ? "bg-volt-elevated text-slate-100 border border-volt-line-strong"
                       : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
                   }`}
                 >
@@ -322,7 +346,7 @@ export default function App() {
                   onClick={() => setNocTab("grid")}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
                     nocTab === "grid"
-                      ? "bg-volt-green/20 text-volt-green border border-volt-green/40 shadow-sm"
+                      ? "bg-volt-elevated text-slate-100 border border-volt-line-strong"
                       : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
                   }`}
                 >
@@ -334,7 +358,7 @@ export default function App() {
                   onClick={() => setNocTab("fleet")}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
                     nocTab === "fleet"
-                      ? "bg-volt-green/20 text-volt-green border border-volt-green/40 shadow-sm"
+                      ? "bg-volt-elevated text-slate-100 border border-volt-line-strong"
                       : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
                   }`}
                 >
@@ -346,7 +370,7 @@ export default function App() {
                   onClick={() => setNocTab("twin3d")}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
                     nocTab === "twin3d"
-                      ? "bg-volt-green/20 text-volt-green border border-volt-green/40 shadow-sm"
+                      ? "bg-volt-elevated text-slate-100 border border-volt-line-strong"
                       : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
                   }`}
                 >
@@ -369,7 +393,7 @@ export default function App() {
 
               <div className="hidden lg:flex items-center space-x-2 text-[11px] text-slate-400 font-sans pr-2">
                 <span>Filter View:</span>
-                <span className="font-mono text-volt-green font-bold uppercase">{nocTab === "all" ? "All Sections" : nocTab}</span>
+                <span className="font-mono text-slate-300 font-medium uppercase">{nocTab === "all" ? "All Sections" : nocTab}</span>
               </div>
             </div>
 
@@ -391,11 +415,11 @@ export default function App() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between pt-2">
                   <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
-                    <Box className="w-6 h-6 text-volt-green" />
+                    <Box className="w-5 h-5 text-slate-400" />
                     <span>Charging Bay Digital Twin ({ALL_STATIONS.length} Bays)</span>
                   </h2>
                   <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
-                    Rendering: <span className="text-volt-green font-bold">LIVE TELEMETRY</span>
+                    Rendering: <span className="text-slate-300 font-medium">live telemetry</span>
                   </div>
                 </div>
 
@@ -408,94 +432,124 @@ export default function App() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between pt-2">
                   <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
-                    <Zap className="w-6 h-6 text-volt-green fill-volt-green/20" />
+                    <Zap className="w-5 h-5 text-slate-400" />
                     <span>Charger Fleet Overview ({ALL_STATIONS.length} Stations)</span>
                   </h2>
                   <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
-                    AI Anomaly Limit: <span className="text-amber-400 font-bold">score &gt; 0.65</span>
+                    Risk Index threshold: <span className="text-amber-300 font-medium">0.65</span>
                   </div>
                 </div>
 
-                <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {ALL_STATIONS.map((stationId) => {
                     const telemetry: TelemetryEvent | undefined = stations[stationId];
                     const isQuarantined = telemetry?.status === "Quarantined";
                     const isMlAnomaly = (telemetry?.ml_score ?? 0) > 0.65;
                     const stationThreat = threats.find((t) => t.station_id === stationId);
+                    const risk = Math.min(Math.max(telemetry?.ml_score ?? 0, 0), 1);
+                    const soc = Math.min(Math.max(telemetry?.soc ?? 0, 0), 100);
+                    const isCharging = telemetry?.status === "Charging";
+                    const dotClass = isQuarantined
+                      ? "bg-state-critical"
+                      : isMlAnomaly
+                      ? "bg-state-warn"
+                      : isCharging
+                      ? "bg-state-active"
+                      : telemetry
+                      ? "bg-state-healthy"
+                      : "bg-slate-600";
+                    const riskBarClass = isQuarantined
+                      ? "bg-state-critical"
+                      : risk > 0.65
+                      ? "bg-state-warn"
+                      : risk > 0.4
+                      ? "bg-amber-500/60"
+                      : "bg-slate-500";
 
                     return (
                       <div
                         key={stationId}
-                        className={`p-5 rounded-2xl transition-all duration-300 ${
+                        className={`p-3 rounded-lg transition-colors ${
                           isQuarantined
                             ? "glass-card-threat-tier1"
                             : isMlAnomaly
                             ? "glass-card-threat-tier2"
-                            : "glass-panel hover:bg-white/15"
+                            : "glass-panel hover:border-volt-line-strong"
                         }`}
                       >
-                        {/* Station Header */}
-                        <div className="flex items-center justify-between pb-3.5 border-b border-white/15">
-                          <div className="flex items-center space-x-2.5">
-                            <div className="w-3 h-3 rounded-full bg-volt-green shadow-sm shadow-volt-green" />
-                            <span className="font-mono font-black text-xl text-white">{stationId}</span>
+                        {/* Header */}
+                        <div className="flex items-center justify-between pb-2 border-b border-volt-line">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                            <span className="font-mono font-semibold text-sm text-slate-100">{stationId}</span>
                           </div>
                           <span
-                            className={`text-xs px-3 py-1 rounded-full border font-mono tracking-wider ${getStatusBadgeStyle(
+                            className={`text-[10px] px-1.5 py-0.5 rounded border font-medium tracking-wide ${getStatusBadgeStyle(
                               telemetry?.status
                             )}`}
                           >
-                            {telemetry ? telemetry.status : "Connecting..."}
+                            {telemetry ? telemetry.status : "—"}
                           </span>
                         </div>
 
-                        {/* Metrics */}
-                        <div className="mt-4 space-y-4">
-                          <div className="flex items-baseline justify-between">
-                            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Power Draw</span>
-                            <span className="font-mono font-black text-2xl text-volt-green">
-                              {telemetry ? telemetry.power_kw.toFixed(1) : "0.0"} <span className="text-xs font-sans text-slate-400 font-normal">kW</span>
+                        {/* Line-item telemetry */}
+                        <div className="mt-2 divide-y divide-volt-line/70 font-mono text-xs">
+                          <div className="flex items-center justify-between py-1">
+                            <span className="font-sans text-volt-muted">Power</span>
+                            <span className="text-slate-100 tabular-nums">
+                              {telemetry ? telemetry.power_kw.toFixed(1) : "0.0"}
+                              <span className="text-volt-muted ml-1">kW</span>
                             </span>
                           </div>
-
-                          {/* SoC Bar */}
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-mono">
-                              <span className="text-slate-400 font-medium">Battery Level (SoC)</span>
-                              <span className="font-bold text-slate-200">
-                                {telemetry ? `${telemetry.soc.toFixed(0)}%` : "0%"}
-                              </span>
-                            </div>
-                            <div className="w-full bg-black/60 rounded-full h-3 overflow-hidden p-0.5 border border-white/15">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  isQuarantined
-                                    ? "bg-rose-500"
-                                    : isMlAnomaly
-                                    ? "bg-amber-400"
-                                    : "bg-gradient-to-r from-volt-green to-emerald-400"
-                                }`}
-                                style={{ width: `${Math.min(Math.max(telemetry?.soc ?? 0, 0), 100)}%` }}
-                              />
-                            </div>
+                          <div className="flex items-center justify-between py-1">
+                            <span className="font-sans text-volt-muted">SoC</span>
+                            <span className="text-slate-100 tabular-nums">
+                              {telemetry ? soc.toFixed(0) : "0"}
+                              <span className="text-volt-muted ml-1">%</span>
+                            </span>
                           </div>
+                          <div className="flex items-center justify-between py-1">
+                            <span className="font-sans text-volt-muted">Energy</span>
+                            <span className="text-slate-100 tabular-nums">
+                              {telemetry ? telemetry.energy_register_kwh.toFixed(1) : "0.0"}
+                              <span className="text-volt-muted ml-1">kWh</span>
+                            </span>
+                          </div>
+                        </div>
 
-                          {/* ML Score */}
-                          <div className="pt-2.5 flex items-center justify-between border-t border-white/15 text-xs font-mono">
-                            <span className="text-slate-400 font-medium">AI Anomaly Score</span>
+                        {/* SoC bar */}
+                        <div className="mt-2 h-1 w-full rounded-full bg-volt-bg overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              isQuarantined ? "bg-state-critical" : isCharging ? "bg-state-active" : "bg-state-healthy"
+                            }`}
+                            style={{ width: `${soc}%` }}
+                          />
+                        </div>
+
+                        {/* Risk Index */}
+                        <div className="mt-2.5 pt-2 border-t border-volt-line">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="font-sans text-volt-muted">Risk Index</span>
                             <span
-                              className={`font-bold px-2 py-0.5 rounded-md ${
-                                isMlAnomaly
-                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/50"
-                                  : "bg-black/60 text-slate-200 border border-white/10"
+                              className={`tabular-nums font-medium ${
+                                isMlAnomaly ? "text-amber-300" : "text-slate-300"
                               }`}
                             >
-                              {telemetry ? telemetry.ml_score.toFixed(2) : "0.00"}
+                              {telemetry ? risk.toFixed(2) : "0.00"}
                             </span>
                           </div>
+                          <div className="mt-1 h-1 w-full rounded-full bg-volt-bg overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-500 ${riskBarClass}`}
+                              style={{ width: `${risk * 100}%` }}
+                            />
+                          </div>
+                        </div>
 
-                          {/* Badges */}
-                          {isQuarantined && (
+                        {/* Badges */}
+                        {isQuarantined && (
+                          <div className="mt-2">
                             <ThreatBadge
                               threat={stationThreat}
                               tier={1}
@@ -504,18 +558,20 @@ export default function App() {
                               actionTaken="quarantined"
                               compact={true}
                             />
-                          )}
-                          {isMlAnomaly && !isQuarantined && (
+                          </div>
+                        )}
+                        {isMlAnomaly && !isQuarantined && (
+                          <div className="mt-2">
                             <ThreatBadge
                               threat={stationThreat}
                               tier={2}
                               mlScore={telemetry?.ml_score}
-                              reason="AI Anomaly score exceeds 0.65 threshold (Subtle Power Drift)"
+                              reason="Risk Index above 0.65 threshold (subtle power drift)"
                               actionTaken="logged"
                               compact={true}
                             />
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -533,7 +589,7 @@ export default function App() {
                   </h3>
                   <button
                     onClick={exportForensicLogs}
-                    className="text-xs font-mono text-volt-green hover:underline flex items-center space-x-1"
+                    className="text-xs font-mono text-slate-300 hover:text-slate-100 flex items-center space-x-1"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download Log JSON</span>
@@ -557,5 +613,6 @@ export default function App() {
       {/* Global Starlink-Style Footer */}
       <Footer />
     </div>
+    </RequireAuth>
   );
 }

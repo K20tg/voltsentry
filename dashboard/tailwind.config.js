@@ -7,25 +7,40 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // Inter for UI, JetBrains Mono for telemetry (loaded in app/layout.tsx).
+        sans: ['var(--font-sans)', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
       colors: {
-        // ── VoltSentry brand palette — the single source of truth ──
-        // Swap-in target for every former cyan/sky/blue/indigo/purple accent.
-        // Threat semantics (rose = Tier-1, amber = Tier-2/ML) stay as-is.
+        // ── VoltSentry SCADA palette ──
+        // Dark slate surfaces, low-contrast borders. Bright colour is reserved
+        // for state (see `state.*`); green is a sparing brand accent only.
         volt: {
-          bg: '#0a0e0d',        // page background — near-black with a green-navy hint
-          surface: '#101614',   // cards, one step lighter than the page
-          elevated: '#16201c',  // hover / raised surfaces
-          green: '#0FFF50',     // primary accent — EV charge green
-          'green-dim': '#0bcc40',
-          'green-deep': '#07481f',
-          line: 'rgba(15,255,80,0.16)',   // 1px borders
-          text: '#e6f2ec',      // off-white body
-          muted: '#8aa39a',     // secondary text
+          bg: '#0B0F17',        // page background — dark slate
+          surface: '#111827',   // cards, one step up
+          elevated: '#1E293B',  // hover / raised surfaces
+          green: '#10B981',     // brand accent — used sparingly
+          'green-dim': '#0E7C58',
+          'green-deep': '#0B3B2C',
+          line: '#1E293B',      // 1px borders — low contrast
+          'line-strong': '#334155',
+          text: '#E2E8F0',      // body text
+          muted: '#94A3B8',     // secondary text
+        },
+        // Semantic state highlights — the only place bright colour belongs.
+        state: {
+          healthy: '#10B981',   // emerald — healthy / idle
+          active: '#22D3EE',    // cyan — active charging
+          warn: '#F59E0B',      // amber — warnings
+          critical: '#EF4444',  // red — critical anomaly / blocked node
         },
       },
       boxShadow: {
-        'volt-glow': '0 0 15px rgba(15,255,80,0.15)',
-        'volt-glow-sm': '0 0 8px rgba(15,255,80,0.13)',
+        'volt-glow': '0 1px 2px rgba(0,0,0,0.4)',
+        'volt-glow-sm': '0 1px 2px rgba(0,0,0,0.35)',
+        panel: '0 1px 0 rgba(255,255,255,0.02), 0 8px 24px -16px rgba(0,0,0,0.6)',
       },
       keyframes: {
         'volt-rise': {

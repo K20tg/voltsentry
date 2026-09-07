@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Hexagon } from "lucide-react";
 
 export function Footer() {
   return (
@@ -10,8 +9,9 @@ export function Footer() {
         {/* Col 1: Brand & Specs */}
         <div className="space-y-3">
           <div className="flex items-center space-x-2 text-white font-bold text-sm tracking-widest uppercase">
-            <Hexagon className="w-5 h-5 text-volt-green stroke-[2]" />
-            <span>VOLTSENTRY AI</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/voltsentry-mark.png" alt="VoltSentry" className="w-5 h-5 rounded" />
+            <span>VOLTSENTRY</span>
           </div>
           <p className="text-slate-400 leading-relaxed font-sans text-xs">
             Software-defined inline OCPP 1.6-J security reverse proxy & cyber-physical twin.

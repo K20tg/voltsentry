@@ -8,24 +8,25 @@
    mirror them for raw CSS (glass panels, canvases, scrollbars, story sections).
    ========================================================================== */
 :root {
-  --volt-bg: #0a0e0d;
-  --volt-surface: #101614;
-  --volt-elevated: #16201c;
-  --volt-green: #0FFF50;
-  --volt-green-dim: #0bcc40;
-  --volt-green-deep: #07481f;
-  --volt-line: rgba(15, 255, 80, 0.16);
-  --volt-text: #e6f2ec;
-  --volt-muted: #8aa39a;
+  --volt-bg: #0B0F17;
+  --volt-surface: #111827;
+  --volt-elevated: #1E293B;
+  --volt-green: #10B981;
+  --volt-green-dim: #0E7C58;
+  --volt-green-deep: #0B3B2C;
+  --volt-line: #1E293B;
+  --volt-line-strong: #334155;
+  --volt-text: #E2E8F0;
+  --volt-muted: #94A3B8;
 
-  --foreground-rgb: 230, 242, 236;
-  --background-start-rgb: 10, 14, 13;
-  --background-end-rgb: 10, 14, 13;
+  --foreground-rgb: 226, 232, 240;
+  --background-start-rgb: 11, 15, 23;
+  --background-end-rgb: 11, 15, 23;
 }
 
 ::selection {
-  background-color: rgba(15, 255, 80, 0.3);
-  color: #ffffff;
+  background-color: rgba(16, 185, 129, 0.22);
+  color: #f8fafc;
 }
 
 html {
@@ -45,56 +46,49 @@ html {
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(15, 255, 80, 0.5);
+  background: rgba(148, 163, 184, 0.4);
 }
 
 body {
   color: var(--volt-text);
   background-color: var(--volt-bg);
   min-height: 100vh;
-  font-family: var(--font-sans), 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Playful rounded display face for headings + the brand wordmark. */
+/* Headings + the brand wordmark — Inter, heavier weight. */
 h1, h2, h3, .font-display {
-  font-family: var(--font-display), 'Baloo 2', var(--font-sans), system-ui, sans-serif;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display), 'Inter', var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.011em;
 }
 
-/* ── Glass material tokens (accent recolored blue/purple → green) ── */
+/* ── Panel materials — flat slate surfaces, low-contrast borders (SCADA) ── */
 .glass-panel {
-  background-color: rgba(16, 22, 20, 0.6);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background-color: var(--volt-surface);
   border: 1px solid var(--volt-line);
-  box-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 8px 24px -18px rgba(0, 0, 0, 0.6);
 }
 
 .glass-panel-dense {
-  background-color: rgba(16, 22, 20, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(15, 255, 80, 0.18);
-  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.6);
+  background-color: #0F1622;
+  border: 1px solid var(--volt-line);
+  box-shadow: 0 10px 30px -20px rgba(0, 0, 0, 0.65);
 }
 
-/* Threat card materials keep their SEMANTIC colors — rose = Tier-1 rule
-   violation, amber = Tier-2 ML anomaly. These are status signals, not brand
-   accent, so they intentionally stay red/amber. */
+/* Threat card materials — state signalling only. Left border is the tell;
+   fill stays near-surface so the panel grid reads evenly. */
 .glass-card-threat-tier1 {
-  background-color: rgba(88, 28, 28, 0.5);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(244, 63, 94, 0.45);
-  box-shadow: 0 0 16px rgba(244, 63, 94, 0.16);
+  background-color: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-left: 2px solid #EF4444;
 }
 
 .glass-card-threat-tier2 {
-  background-color: rgba(120, 53, 15, 0.5);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.16);
+  background-color: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-left: 2px solid #F59E0B;
 }
 
 /* ============================================================================
@@ -125,10 +119,10 @@ h1, h2, h3, .font-display {
   html { scroll-behavior: auto; }
 }
 
-/* Big pinned stat numeral — subtle glow only */
+/* Big pinned stat numeral */
 .stat-numeral {
-  color: var(--volt-green);
-  text-shadow: 0 0 12px rgba(15, 255, 80, 0.2);
+  color: var(--volt-text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Thin animated connective line used between story flow nodes */
