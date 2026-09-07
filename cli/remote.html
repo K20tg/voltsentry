@@ -2,142 +2,736 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="color-scheme" content="dark">
-  <title>VoltSentry Red-Team Remote</title>
+  <title>VoltSentry Tactical Red-Team Remote</title>
   <style>
-    :root{
-      --bg:#0a0e0d; --panel:#111917; --line:#1d2a26;
-      --fg:#e8fff2; --muted:#7c9488;
-      --accent:#0FFF50; --rose:#f43f5e; --amber:#f59e0b;
+    :root {
+      --bg: #060a08;
+      --chassis: #0d1411;
+      --chassis-inner: #111a16;
+      --screen: #030d07;
+      --phosphor: #00ff66;
+      --phosphor-glow: rgba(0, 255, 102, 0.35);
+      --phosphor-dim: #1c4a2d;
+      --accent: #00ff66;
+      --rose: #e11d48;
+      --rose-glow: rgba(225, 29, 72, 0.4);
+      --amber: #d97706;
+      --amber-glow: rgba(217, 119, 6, 0.4);
+      --line: #182820;
+      --line-bright: #253d32;
+      --text: #e2f7eb;
+      --muted: #5e8270;
     }
-    *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-    html,body{margin:0; background:var(--bg); color:var(--fg);
-      font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
-    body{padding:16px; max-width:520px; margin:0 auto; touch-action:manipulation;}
-    header{display:flex; align-items:center; gap:10px; margin:4px 0 14px;}
-    header h1{font-size:18px; margin:0; letter-spacing:.02em;}
-    header .spark{color:var(--accent);}
-    .conn{margin-left:auto; display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted);}
-    .dot{width:11px; height:11px; border-radius:50%; background:var(--rose); box-shadow:0 0 8px currentColor;}
-    .dot.up{background:var(--accent);}
-    .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px;}
-    label.k{display:block; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px;}
-    .targets{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
-    .targets button{padding:11px 0; border-radius:10px; border:1px solid var(--line);
-      background:#0e1513; color:var(--fg); font-size:15px; font-weight:600;}
-    .targets button.sel{border-color:var(--accent); color:var(--accent); background:rgba(15,255,80,.08);}
-    .attacks{display:grid; gap:12px;}
-    .attacks button{position:relative; padding:18px 16px; border-radius:14px; border:1px solid transparent;
-      font-size:18px; font-weight:800; letter-spacing:.03em; color:#0a0e0d; text-align:left;}
-    .attacks button .sub{display:block; font-size:12px; font-weight:600; opacity:.8; margin-top:3px; letter-spacing:.02em;}
-    .b-rose{background:var(--rose);}
-    .b-amber{background:var(--amber);}
-    .b-reset{background:var(--accent);}
-    .attacks button:disabled{opacity:.45; filter:saturate(.6);}
-    .attacks button:active{transform:translateY(1px);}
-    .status{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px;
-      font-size:14px; min-height:44px; white-space:pre-wrap; word-break:break-word;}
-    .status .ok{color:var(--accent);} .status .err{color:var(--rose);}
-    .warn{margin-top:12px; font-size:11px; color:var(--muted); text-align:center;}
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, monospace;
+    }
+
+    /* Interactive Spark Background Canvas */
+    #sparkCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: auto;
+    }
+
+    /* Outer Layout Wrapper */
+    .remote-wrap {
+      position: relative;
+      z-index: 10;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 12px 14px 28px;
+      touch-action: manipulation;
+    }
+
+    /* Tactical Handheld Hardware Chassis (Slight 12px curve, not bubbly) */
+    .chassis {
+      position: relative;
+      width: 100%;
+      max-width: 440px;
+      background: linear-gradient(180deg, #131e19 0%, #0a110e 100%);
+      border: 1px solid #20352b;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 
+        0 16px 40px rgba(0, 0, 0, 0.95),
+        0 0 0 1px rgba(0, 255, 102, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    /* Corner Hex Rivets */
+    .rivet {
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      background: #1c2c24;
+      border: 1px solid #2b4438;
+      border-radius: 2px;
+    }
+    .rivet.tl { top: 8px; left: 8px; }
+    .rivet.tr { top: 8px; right: 8px; }
+    .rivet.bl { bottom: 8px; left: 8px; }
+    .rivet.br { bottom: 8px; right: 8px; }
+
+    /* Top Hardware Status Bar */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2px 10px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .antenna-signal {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 11px;
+    }
+    .signal-bars span {
+      width: 3px;
+      background: var(--muted);
+      border-radius: 1px;
+    }
+    .signal-bars span:nth-child(1) { height: 3px; }
+    .signal-bars span:nth-child(2) { height: 6px; }
+    .signal-bars span:nth-child(3) { height: 9px; }
+    .signal-bars span:nth-child(4) { height: 11px; }
+    .signal-bars.connected span { background: var(--phosphor); }
+
+    .brand-title {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-title span.glow {
+      color: var(--phosphor);
+      text-shadow: 0 0 6px var(--phosphor-glow);
+    }
+
+    .conn-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+    }
+    .conn-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--rose);
+      box-shadow: 0 0 6px var(--rose);
+      transition: all 0.3s;
+    }
+    .conn-dot.active {
+      background: var(--phosphor);
+      box-shadow: 0 0 8px var(--phosphor);
+    }
+
+    /* Phosphor Green OLED Terminal Screen */
+    .oled-screen {
+      position: relative;
+      background: var(--screen);
+      border: 1px solid #142a1d;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Scanlines effect */
+    .oled-screen::before {
+      content: " ";
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      z-index: 2;
+      background-size: 100% 3px;
+      pointer-events: none;
+    }
+
+    .screen-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      border-bottom: 1px solid rgba(0, 255, 102, 0.15);
+      padding-bottom: 5px;
+      margin-bottom: 8px;
+    }
+    .target-badge {
+      color: var(--phosphor);
+      font-weight: 800;
+    }
+
+    .screen-body {
+      font-family: "SF Mono", "Menlo", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--phosphor);
+      text-shadow: 0 0 4px var(--phosphor-glow);
+      min-height: 44px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .screen-body .ok { color: var(--phosphor); font-weight: 700; }
+    .screen-body .err { color: var(--rose); font-weight: 700; }
+
+    /* Section Label */
+    .section-label {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-label::before {
+      content: "";
+      width: 3px;
+      height: 8px;
+      background: var(--phosphor);
+    }
+
+    /* Target Selector Grid (Compact 6px radius) */
+    .targets-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .target-btn {
+      background: #0b1410;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 0;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      transition: all 0.12s ease;
+    }
+    .target-btn:active {
+      transform: translateY(1px);
+    }
+    .target-btn.sel {
+      background: #102419;
+      border-color: var(--phosphor);
+      color: var(--phosphor);
+      box-shadow: inset 0 1px 0 rgba(0, 255, 102, 0.2);
+    }
+
+    /* Tactile 3D Exploits Deck */
+    .attacks-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .attack-card-btn {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .attack-card-btn:active {
+      transform: translateY(2px);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6) !important;
+    }
+    .attack-card-btn:disabled {
+      opacity: 0.45;
+      filter: grayscale(0.4);
+      pointer-events: none;
+    }
+
+    .attack-card-btn .top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+    .attack-card-btn .main-label {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+    }
+    .attack-card-btn .key-tag {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: rgba(255, 255, 255, 0.85);
+    }
+    .attack-card-btn .sub-desc {
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.85;
+    }
+
+    /* Cohesive Tactile Button Styles (Unified Dark Theme, minimal contrast clutter) */
+    .btn-tactile-rose {
+      background: linear-gradient(180deg, #2a1217 0%, #17090c 100%);
+      border-color: #5c1825;
+      color: #fda4af;
+      box-shadow: 0 3px 0 #0d0406, inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .btn-tactile-amber {
+      background: linear-gradient(180deg, #2a1e0c 0%, #171005 100%);
+      border-color: #5c3e12;
+      color: #fde68a;
+      box-shadow: 0 3px 0 #0d0902, inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .btn-tactile-reset {
+      background: linear-gradient(180deg, #102b1c 0%, #08170e 100%);
+      border-color: #1b5433;
+      color: var(--phosphor);
+      box-shadow: 0 3px 0 #040c07, inset 0 1px 0 rgba(0, 255, 102, 0.2);
+    }
+    .btn-tactile-reset .key-tag {
+      background: rgba(0, 255, 102, 0.15);
+      border-color: var(--phosphor);
+      color: var(--phosphor);
+    }
+
+    /* Footer Tag */
+    .remote-footer {
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .remote-footer span {
+      color: var(--phosphor);
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1><span class="spark">⚡</span> VoltSentry Remote</h1>
-    <div class="conn"><span id="dot" class="dot"></span><span id="connLabel">connecting…</span></div>
-  </header>
 
-  <div class="card">
-    <label class="k">Target station</label>
-    <div class="targets" id="targets"></div>
+  <!-- Interactive Spark Canvas Background -->
+  <canvas id="sparkCanvas"></canvas>
+
+  <div class="remote-wrap">
+    <div class="chassis">
+      <!-- Hardware Corner Rivets -->
+      <div class="rivet tl"></div>
+      <div class="rivet tr"></div>
+      <div class="rivet bl"></div>
+      <div class="rivet br"></div>
+
+      <!-- Top Hardware Bar -->
+      <div class="top-bar">
+        <div class="antenna-signal">
+          <div class="signal-bars connected" id="sigBars">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <span id="rfText">RF 5.8G</span>
+        </div>
+
+        <div class="brand-title">
+          <span class="glow">⚡</span> VOLTSENTRY <span style="font-size: 9px; opacity: 0.5;">v1.2</span>
+        </div>
+
+        <div class="conn-status">
+          <div class="conn-dot" id="dot"></div>
+          <span id="connLabel">READY</span>
+        </div>
+      </div>
+
+      <!-- OLED Phosphor Terminal Screen -->
+      <div class="oled-screen">
+        <div class="screen-header">
+          <span>CONSOLE: <span class="target-badge" id="screenTarget">FLEET</span></span>
+          <span id="pingDisplay">RTT: 1ms</span>
+        </div>
+        <div class="screen-body" id="status">SYS_READY: Select target & trigger exploit.</div>
+      </div>
+
+      <!-- Target Selection -->
+      <div class="section-label">Target Charger Port</div>
+      <div class="targets-grid" id="targets"></div>
+
+      <!-- Exploit Action Buttons -->
+      <div class="section-label">Exploit Execution Array</div>
+      <div class="attacks-deck" id="attacks"></div>
+
+      <!-- Footer Info -->
+      <div class="remote-footer">
+        VoltSentry Red-Team Relay · <span>Port 8090</span> · LAN Trusted Network
+      </div>
+    </div>
   </div>
 
-  <div class="attacks" id="attacks"></div>
+  <script>
+  (() => {
+    // ---- 1. Interactive Electric Spark Background Canvas ----
+    const canvas = document.getElementById("sparkCanvas");
+    const ctx = canvas.getContext("2d");
+    let width, height;
+    let sparks = [];
 
-  <div class="status" id="status">Pick a target, then fire an attack.</div>
-  <div class="warn">Relay binds the LAN with no auth — trusted demo network only.</div>
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
 
-<script>
-(() => {
-  const STATIONS = ["CP-01","CP-02","CP-03","CP-04","CP-05","CP-06","CP-07","CP-08"];
-  // default selection = Fleet; per-station attacks fall back to their own default.
-  let target = "fleet";
+    function addSparks(x, y, count = 4) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 3 + 1;
+        sparks.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          decay: Math.random() * 0.04 + 0.02,
+          size: Math.random() * 2 + 1
+        });
+      }
+    }
 
-  const ATTACKS = [
-    {attack:"meter_spoof",    label:"METER SPOOF",     sub:"reports 5 kW · default CP-03 · R2 + ML", cls:"b-rose",  def:"CP-03", station:true},
-    {attack:"fleet_oscillate",label:"GRID OSCILLATION",sub:"1 Hz start/stop · fleet-wide · R3",       cls:"b-rose",  def:null,    station:false},
-    {attack:"subtle_drift",   label:"SUBTLE DRIFT",    sub:"−2%/tick · default CP-02 · ML only",      cls:"b-amber", def:"CP-02", station:true},
-    {attack:"session_shadow", label:"SESSION SHADOW",  sub:"duplicate handshake · default CP-01 · R4",cls:"b-rose",  def:"CP-01", station:true},
-    {attack:"reset",          label:"RESET FLEET",     sub:"clear quarantine · all stations clean",   cls:"b-reset", def:null,    station:false},
-  ];
+    window.addEventListener("touchstart", (e) => {
+      const t = e.touches[0];
+      addSparks(t.clientX, t.clientY, 6);
+    }, { passive: true });
 
-  // ---- target selector ----
-  const tWrap = document.getElementById("targets");
-  const targetButtons = [];
-  [["fleet","Fleet"], ...STATIONS.map(s => [s, s])].forEach(([val,txt]) => {
-    const b = document.createElement("button");
-    b.textContent = txt; b.dataset.val = val;
-    b.onclick = () => { target = val; renderTargets(); };
-    tWrap.appendChild(b); targetButtons.push(b);
-  });
-  function renderTargets(){ targetButtons.forEach(b => b.classList.toggle("sel", b.dataset.val === target)); }
-  renderTargets();
+    window.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      if (Math.random() > 0.5) addSparks(t.clientX, t.clientY, 2);
+    }, { passive: true });
 
-  function stationFor(a){
-    if(!a.station) return null;                 // fleet-only attack
-    return target !== "fleet" ? target : a.def;  // selector overrides the default
-  }
+    window.addEventListener("mousemove", (e) => {
+      if (Math.random() > 0.8) addSparks(e.clientX, e.clientY, 1);
+    });
 
-  // ---- attack buttons ----
-  const aWrap = document.getElementById("attacks");
-  const attackButtons = [];
-  ATTACKS.forEach(a => {
-    const b = document.createElement("button");
-    b.className = a.cls;
-    b.innerHTML = `${a.label}<span class="sub">${a.sub}</span>`;
-    b.onclick = () => fire(a, b);
-    aWrap.appendChild(b); attackButtons.push(b);
-  });
+    const nodes = [];
+    for (let i = 0; i < 15; i++) {
+      nodes.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6,
+        pulse: Math.random() * Math.PI
+      });
+    }
 
-  const statusEl = document.getElementById("status");
-  function setStatus(html){ statusEl.innerHTML = html; }
+    function renderBackground() {
+      ctx.fillStyle = "rgba(6, 10, 8, 0.3)";
+      ctx.fillRect(0, 0, width, height);
 
-  // ---- websocket (same origin as the page) ----
-  let ws = null, inFlight = false;
-  function setButtons(disabled){ attackButtons.forEach(b => b.disabled = disabled); }
+      // Render circuit grid nodes
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        n.x += n.vx; n.y += n.vy;
+        if (n.x < 0 || n.x > width) n.vx *= -1;
+        if (n.y < 0 || n.y > height) n.vy *= -1;
+        n.pulse += 0.02;
 
-  function connect(){
-    ws = new WebSocket(`ws://${location.host}`);
-    ws.onopen = () => {
-      document.getElementById("dot").classList.add("up");
-      document.getElementById("connLabel").textContent = "connected";
-      setButtons(false);
-    };
-    ws.onclose = () => {
-      document.getElementById("dot").classList.remove("up");
-      document.getElementById("connLabel").textContent = "reconnecting…";
-      setButtons(true); inFlight = false;
-      setTimeout(connect, 2000);
-    };
-    ws.onerror = () => { try{ ws.close(); }catch(e){} };
-    ws.onmessage = (ev) => {
-      let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
-      inFlight = false; setButtons(false);
-      const tag = m.ok ? '<span class="ok">✓ OK</span>' : '<span class="err">✗ FAIL</span>';
-      setStatus(`${tag}  ${m.attack || ""}\n${m.detail || ""}`);
-    };
-  }
-  connect();
+        for (let j = i + 1; j < nodes.length; j++) {
+          const m = nodes[j];
+          const dist = Math.hypot(n.x - m.x, n.y - m.y);
+          if (dist < 150) {
+            const alpha = (1 - dist / 150) * 0.18 * (Math.sin(n.pulse) * 0.5 + 0.5);
+            ctx.strokeStyle = `rgba(0, 255, 102, ${alpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(n.x, n.y);
+            ctx.lineTo(m.x, m.y);
+            ctx.stroke();
+          }
+        }
 
-  function fire(a, btn){
-    if(!ws || ws.readyState !== 1 || inFlight) return;
-    const station_id = stationFor(a);
-    inFlight = true; setButtons(true);
-    setStatus(`→ ${a.label} ${station_id ? "→ "+station_id : "(fleet)"} …`);
-    ws.send(JSON.stringify({cmd:"trigger", attack:a.attack, station_id}));
-  }
-})();
-</script>
+        ctx.fillStyle = "rgba(0, 255, 102, 0.3)";
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Render touch sparks
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.x += s.vx; s.y += s.vy;
+        s.life -= s.decay;
+        if (s.life <= 0) { sparks.splice(i, 1); continue; }
+
+        ctx.fillStyle = `rgba(0, 255, 102, ${s.life})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      requestAnimationFrame(renderBackground);
+    }
+    renderBackground();
+
+    // ---- 2. Web Audio Synthesizer Sound Effects ----
+    let audioCtx = null;
+    function playChirp(type = "click") {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        if (type === "click") {
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(1200, now);
+          osc.frequency.exponentialRampToValueAtTime(350, now + 0.04);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          osc.start(now); osc.stop(now + 0.04);
+        } else if (type === "attack") {
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(750, now);
+          osc.frequency.exponentialRampToValueAtTime(100, now + 0.16);
+          gain.gain.setValueAtTime(0.35, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+          osc.start(now); osc.stop(now + 0.16);
+        } else if (type === "reset") {
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(250, now);
+          osc.frequency.exponentialRampToValueAtTime(850, now + 0.14);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          osc.start(now); osc.stop(now + 0.14);
+        }
+      } catch (e) {}
+    }
+
+    // Native Vibration Haptics
+    function haptic(pattern = [20]) {
+      if ("vibrate" in navigator) {
+        try { navigator.vibrate(pattern); } catch (e) {}
+      }
+    }
+
+    // ---- 3. VoltSentry Red-Team Remote Logic ----
+    const STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
+    let target = "fleet";
+
+    const ATTACKS = [
+      {
+        attack: "meter_spoof",
+        label: "METER SPOOF",
+        sub: "Draws 120 kW, reports 5 kW · R2 + ML",
+        cls: "btn-tactile-rose",
+        key: "KEY 1",
+        def: "CP-03",
+        station: true
+      },
+      {
+        attack: "fleet_oscillate",
+        label: "GRID OSCILLATION",
+        sub: "1 Hz rapid Start/Stop cycles · Fleet R3",
+        cls: "btn-tactile-rose",
+        key: "KEY 2",
+        def: null,
+        station: false
+      },
+      {
+        attack: "subtle_drift",
+        label: "SUBTLE DRIFT",
+        sub: "Compounding −2%/tick · ML Anomaly (~40s)",
+        cls: "btn-tactile-amber",
+        key: "KEY 4",
+        def: "CP-02",
+        station: true
+      },
+      {
+        attack: "session_shadow",
+        label: "SESSION SHADOW",
+        sub: "Rogue duplicate handshake on live CPID · R4",
+        cls: "btn-tactile-rose",
+        key: "KEY 3",
+        def: "CP-01",
+        station: true
+      },
+      {
+        attack: "reset",
+        label: "RESET FLEET",
+        sub: "Clear quarantine · Return all to clean mode",
+        cls: "btn-tactile-reset",
+        key: "RESET",
+        def: null,
+        station: false
+      }
+    ];
+
+    // Build Target Selector
+    const tWrap = document.getElementById("targets");
+    const targetButtons = [];
+    [["fleet", "FLEET"], ...STATIONS.map(s => [s, s])].forEach(([val, txt]) => {
+      const b = document.createElement("button");
+      b.className = "target-btn";
+      b.textContent = txt;
+      b.dataset.val = val;
+      b.onclick = () => {
+        target = val;
+        playChirp("click");
+        haptic([15]);
+        renderTargets();
+      };
+      tWrap.appendChild(b);
+      targetButtons.push(b);
+    });
+
+    const screenTarget = document.getElementById("screenTarget");
+    function renderTargets() {
+      targetButtons.forEach(b => b.classList.toggle("sel", b.dataset.val === target));
+      screenTarget.textContent = target.toUpperCase();
+    }
+    renderTargets();
+
+    function stationFor(a) {
+      if (!a.station) return null;
+      return target !== "fleet" ? target : a.def;
+    }
+
+    // Build Attack Buttons
+    const aWrap = document.getElementById("attacks");
+    const attackButtons = [];
+    ATTACKS.forEach(a => {
+      const b = document.createElement("button");
+      b.className = `attack-card-btn ${a.cls}`;
+      b.innerHTML = `
+        <div class="top-row">
+          <span class="main-label">${a.label}</span>
+          <span class="key-tag">${a.key}</span>
+        </div>
+        <span class="sub-desc">${a.sub}</span>
+      `;
+      b.onclick = () => fire(a, b);
+      aWrap.appendChild(b);
+      attackButtons.push(b);
+    });
+
+    const statusEl = document.getElementById("status");
+    const dot = document.getElementById("dot");
+    const connLabel = document.getElementById("connLabel");
+
+    function setStatus(html) {
+      statusEl.innerHTML = html;
+    }
+
+    // ---- WebSocket Relay Connection ----
+    let ws = null, inFlight = false;
+    function setButtons(disabled) {
+      attackButtons.forEach(b => b.disabled = disabled);
+    }
+
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}`);
+      ws.onopen = () => {
+        dot.classList.add("active");
+        connLabel.textContent = "LINKED";
+        setButtons(false);
+      };
+      ws.onclose = () => {
+        dot.classList.remove("active");
+        connLabel.textContent = "RETRY…";
+        setButtons(true);
+        inFlight = false;
+        setTimeout(connect, 2000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        inFlight = false;
+        setButtons(false);
+
+        const tag = m.ok ? '<span class="ok">✓ ACK ACCEPTED</span>' : '<span class="err">✗ REJECTED</span>';
+        setStatus(`${tag}\n${m.attack ? "EXPLOIT: " + m.attack.toUpperCase() + "\n" : ""}${m.detail || ""}`);
+        
+        if (m.ok) {
+          haptic([30, 50, 30]);
+        } else {
+          haptic([100]);
+        }
+      };
+    }
+    connect();
+
+    function fire(a, btn) {
+      if (!ws || ws.readyState !== 1 || inFlight) return;
+      const station_id = stationFor(a);
+      inFlight = true;
+      setButtons(true);
+
+      if (a.attack === "reset") {
+        playChirp("reset");
+        haptic([25, 25]);
+      } else {
+        playChirp("attack");
+        haptic([35, 70]);
+      }
+
+      setStatus(`→ DISPATCHING ${a.label}\nTARGET: ${station_id ? station_id : "FLEET-WIDE"} …`);
+      ws.send(JSON.stringify({ cmd: "trigger", attack: a.attack, station_id }));
+    }
+  })();
+  </script>
 </body>
 </html>
