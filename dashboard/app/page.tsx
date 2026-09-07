@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useFeed } from "../lib/useFeed";
 import { useAudioAlert } from "../lib/useAudioAlert";
 import { useVoiceAlert } from "../lib/useVoiceAlert";
@@ -18,10 +19,27 @@ import { SettingsView } from "../components/SettingsView";
 import {
   Icon3DShield,
 } from "../components/3dIcons";
-import { Play, Volume2, Radio, Zap, Download, ShieldAlert, Hexagon, User, Settings, LayoutDashboard, Globe } from "lucide-react";
+import { Play, Volume2, Radio, Zap, Download, ShieldAlert, Hexagon, User, Settings, LayoutDashboard, Globe, Box, Loader2 } from "lucide-react";
+
+/**
+ * Three.js touches `window` at import time, so the 3D twin must never be part
+ * of the server render. `ssr: false` keeps it strictly client-side; the 2D grid
+ * below is unaffected and stays the fallback if WebGL is unavailable.
+ */
+const ChargingTwin3D = dynamic(() => import("../components/ChargingTwin3D"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[540px] rounded-2xl border border-white/10 bg-slate-950 flex flex-col items-center justify-center space-y-3">
+      <Loader2 className="w-8 h-8 text-volt-green animate-spin" />
+      <span className="font-mono text-xs text-slate-400 tracking-wider">
+        INITIALISING WEBGL DIGITAL TWIN...
+      </span>
+    </div>
+  ),
+});
 
 type ViewState = "landing" | "noc" | "account" | "settings";
-type NocTab = "all" | "grid" | "fleet" | "threats";
+type NocTab = "all" | "grid" | "fleet" | "twin3d" | "threats";
 
 const ALL_STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
 
@@ -321,7 +339,19 @@ export default function App() {
                   }`}
                 >
                   <Radio className="w-4 h-4" />
-                  <span>CHARGER FLEET ({ALL_STATIONS.length})</span>
+                  <span>2D FLEET GRID ({ALL_STATIONS.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setNocTab("twin3d")}
+                  className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
+                    nocTab === "twin3d"
+                      ? "bg-volt-green/20 text-volt-green border border-volt-green/40 shadow-sm"
+                      : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
+                  }`}
+                >
+                  <Box className="w-4 h-4" />
+                  <span>3D DIGITAL TWIN</span>
                 </button>
 
                 <button
@@ -353,6 +383,24 @@ export default function App() {
                   <PowerChart data={powerHistory} />
                 </div>
               </section>
+            )}
+
+            {/* 3D Digital Twin — mounts only on its own tab so the 2D console
+                never pays the WebGL cost, and unmounts cleanly when you leave. */}
+            {nocTab === "twin3d" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pt-2">
+                  <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
+                    <Box className="w-6 h-6 text-volt-green" />
+                    <span>Charging Bay Digital Twin ({ALL_STATIONS.length} Bays)</span>
+                  </h2>
+                  <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
+                    Rendering: <span className="text-volt-green font-bold">LIVE TELEMETRY</span>
+                  </div>
+                </div>
+
+                <ChargingTwin3D stations={stations} threats={threats} stationIds={ALL_STATIONS} />
+              </div>
             )}
 
             {/* Fleet Section Header & 8-Station Grid */}
