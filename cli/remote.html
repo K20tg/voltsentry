@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>VoltSentry Red-Team Remote</title>
+  <style>
+    :root{
+      --bg:#0a0e0d; --panel:#111917; --line:#1d2a26;
+      --fg:#e8fff2; --muted:#7c9488;
+      --accent:#0FFF50; --rose:#f43f5e; --amber:#f59e0b;
+    }
+    *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+    html,body{margin:0; background:var(--bg); color:var(--fg);
+      font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+    body{padding:16px; max-width:520px; margin:0 auto; touch-action:manipulation;}
+    header{display:flex; align-items:center; gap:10px; margin:4px 0 14px;}
+    header h1{font-size:18px; margin:0; letter-spacing:.02em;}
+    header .spark{color:var(--accent);}
+    .conn{margin-left:auto; display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted);}
+    .dot{width:11px; height:11px; border-radius:50%; background:var(--rose); box-shadow:0 0 8px currentColor;}
+    .dot.up{background:var(--accent);}
+    .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px;}
+    label.k{display:block; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px;}
+    .targets{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+    .targets button{padding:11px 0; border-radius:10px; border:1px solid var(--line);
+      background:#0e1513; color:var(--fg); font-size:15px; font-weight:600;}
+    .targets button.sel{border-color:var(--accent); color:var(--accent); background:rgba(15,255,80,.08);}
+    .attacks{display:grid; gap:12px;}
+    .attacks button{position:relative; padding:18px 16px; border-radius:14px; border:1px solid transparent;
+      font-size:18px; font-weight:800; letter-spacing:.03em; color:#0a0e0d; text-align:left;}
+    .attacks button .sub{display:block; font-size:12px; font-weight:600; opacity:.8; margin-top:3px; letter-spacing:.02em;}
+    .b-rose{background:var(--rose);}
+    .b-amber{background:var(--amber);}
+    .b-reset{background:var(--accent);}
+    .attacks button:disabled{opacity:.45; filter:saturate(.6);}
+    .attacks button:active{transform:translateY(1px);}
+    .status{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+      font-size:14px; min-height:44px; white-space:pre-wrap; word-break:break-word;}
+    .status .ok{color:var(--accent);} .status .err{color:var(--rose);}
+    .warn{margin-top:12px; font-size:11px; color:var(--muted); text-align:center;}
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="spark">⚡</span> VoltSentry Remote</h1>
+    <div class="conn"><span id="dot" class="dot"></span><span id="connLabel">connecting…</span></div>
+  </header>
+
+  <div class="card">
+    <label class="k">Target station</label>
+    <div class="targets" id="targets"></div>
+  </div>
+
+  <div class="attacks" id="attacks"></div>
+
+  <div class="status" id="status">Pick a target, then fire an attack.</div>
+  <div class="warn">Relay binds the LAN with no auth — trusted demo network only.</div>
+
+<script>
+(() => {
+  const STATIONS = ["CP-01","CP-02","CP-03","CP-04","CP-05","CP-06","CP-07","CP-08"];
+  // default selection = Fleet; per-station attacks fall back to their own default.
+  let target = "fleet";
+
+  const ATTACKS = [
+    {attack:"meter_spoof",    label:"METER SPOOF",     sub:"reports 5 kW · default CP-03 · R2 + ML", cls:"b-rose",  def:"CP-03", station:true},
+    {attack:"fleet_oscillate",label:"GRID OSCILLATION",sub:"1 Hz start/stop · fleet-wide · R3",       cls:"b-rose",  def:null,    station:false},
+    {attack:"subtle_drift",   label:"SUBTLE DRIFT",    sub:"−2%/tick · default CP-02 · ML only",      cls:"b-amber", def:"CP-02", station:true},
+    {attack:"session_shadow", label:"SESSION SHADOW",  sub:"duplicate handshake · default CP-01 · R4",cls:"b-rose",  def:"CP-01", station:true},
+    {attack:"reset",          label:"RESET FLEET",     sub:"clear quarantine · all stations clean",   cls:"b-reset", def:null,    station:false},
+  ];
+
+  // ---- target selector ----
+  const tWrap = document.getElementById("targets");
+  const targetButtons = [];
+  [["fleet","Fleet"], ...STATIONS.map(s => [s, s])].forEach(([val,txt]) => {
+    const b = document.createElement("button");
+    b.textContent = txt; b.dataset.val = val;
+    b.onclick = () => { target = val; renderTargets(); };
+    tWrap.appendChild(b); targetButtons.push(b);
+  });
+  function renderTargets(){ targetButtons.forEach(b => b.classList.toggle("sel", b.dataset.val === target)); }
+  renderTargets();
+
+  function stationFor(a){
+    if(!a.station) return null;                 // fleet-only attack
+    return target !== "fleet" ? target : a.def;  // selector overrides the default
+  }
+
+  // ---- attack buttons ----
+  const aWrap = document.getElementById("attacks");
+  const attackButtons = [];
+  ATTACKS.forEach(a => {
+    const b = document.createElement("button");
+    b.className = a.cls;
+    b.innerHTML = `${a.label}<span class="sub">${a.sub}</span>`;
+    b.onclick = () => fire(a, b);
+    aWrap.appendChild(b); attackButtons.push(b);
+  });
+
+  const statusEl = document.getElementById("status");
+  function setStatus(html){ statusEl.innerHTML = html; }
+
+  // ---- websocket (same origin as the page) ----
+  let ws = null, inFlight = false;
+  function setButtons(disabled){ attackButtons.forEach(b => b.disabled = disabled); }
+
+  function connect(){
+    ws = new WebSocket(`ws://${location.host}`);
+    ws.onopen = () => {
+      document.getElementById("dot").classList.add("up");
+      document.getElementById("connLabel").textContent = "connected";
+      setButtons(false);
+    };
+    ws.onclose = () => {
+      document.getElementById("dot").classList.remove("up");
+      document.getElementById("connLabel").textContent = "reconnecting…";
+      setButtons(true); inFlight = false;
+      setTimeout(connect, 2000);
+    };
+    ws.onerror = () => { try{ ws.close(); }catch(e){} };
+    ws.onmessage = (ev) => {
+      let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+      inFlight = false; setButtons(false);
+      const tag = m.ok ? '<span class="ok">✓ OK</span>' : '<span class="err">✗ FAIL</span>';
+      setStatus(`${tag}  ${m.attack || ""}\n${m.detail || ""}`);
+    };
+  }
+  connect();
+
+  function fire(a, btn){
+    if(!ws || ws.readyState !== 1 || inFlight) return;
+    const station_id = stationFor(a);
+    inFlight = true; setButtons(true);
+    setStatus(`→ ${a.label} ${station_id ? "→ "+station_id : "(fleet)"} …`);
+    ws.send(JSON.stringify({cmd:"trigger", attack:a.attack, station_id}));
+  }
+})();
+</script>
+</body>
+</html>
