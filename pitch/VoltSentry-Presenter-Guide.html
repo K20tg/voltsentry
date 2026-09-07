@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoltSentry — Presenter Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0f172a; --sub:#475569; --dim:#64748b; --line:#e2e8f0;
+    --accent:#0e7c58; --warn:#b45309; --crit:#b91c1c; --act:#0e7490;
+    --mono:'JetBrains Mono','SFMono-Regular',ui-monospace,Consolas,monospace;
+    --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:15px}
+  body{font-family:var(--sans);color:var(--ink);line-height:1.5;background:#fff;
+       max-width:820px;margin:0 auto;padding:44px 52px}
+  h1{font-size:2.1rem;letter-spacing:-.02em;line-height:1.1;margin-bottom:.4rem}
+  h2{font-size:1.3rem;letter-spacing:-.01em;margin:2.2rem 0 .8rem;padding-bottom:.35rem;border-bottom:2px solid var(--ink)}
+  h3{font-size:1.02rem;margin:1.3rem 0 .4rem;color:var(--ink)}
+  p{margin:.5rem 0;color:var(--ink)}
+  .sub{color:var(--sub)}
+  .lede{font-size:1.12rem;color:var(--sub);margin:.6rem 0 0}
+  ul,ol{margin:.4rem 0 .4rem 1.3rem}
+  li{margin:.28rem 0}
+  code,.mono{font-family:var(--mono);font-size:.86em;background:#f1f5f9;padding:.08em .35em;border-radius:3px}
+  table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.92rem}
+  th,td{text-align:left;padding:.55rem .6rem;border:1px solid var(--line);vertical-align:top}
+  th{background:#f8fafc;font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:500}
+  .say li{color:var(--ink)}
+  .say{border-left:3px solid var(--accent);padding-left:.9rem;margin:.5rem 0}
+  .do{border-left:3px solid var(--act);padding-left:.9rem;margin:.5rem 0}
+  .do::before{content:"DO — ";font-family:var(--mono);font-size:.72rem;color:var(--act);letter-spacing:.1em}
+  .fallback{border-left:3px solid var(--warn);padding-left:.9rem;margin:.5rem 0;background:#fffbeb}
+  .fallback::before{content:"IF IT MISBEHAVES — ";font-family:var(--mono);font-size:.72rem;color:var(--warn);letter-spacing:.08em}
+  .t{font-family:var(--mono);font-weight:700}
+  .slidehdr{display:flex;gap:.7rem;align-items:baseline;margin-top:1.6rem}
+  .slidehdr .n{font-family:var(--mono);font-size:.8rem;color:#fff;background:var(--ink);padding:.12rem .5rem;border-radius:4px}
+  .slidehdr h3{margin:0}
+  .point{font-weight:600;color:var(--accent);margin:.3rem 0}
+  .rule{font-family:var(--mono);color:var(--act)}
+  .box{border:1px solid var(--line);border-radius:8px;padding:1rem 1.1rem;margin:.8rem 0;background:#f8fafc}
+  hr{border:0;border-top:1px solid var(--line);margin:1.4rem 0}
+  .pagebreak{page-break-before:always}
+  @media print{
+    body{max-width:none;padding:0 8mm}
+    h2{page-break-after:avoid} .slidehdr{page-break-after:avoid}
+    table,.box,.say,.do,.fallback{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<h1>VoltSentry — Presenter Guide</h1>
+<p class="lede">How and when to explain what. A 4-minute run-of-show, a slide-by-slide script, the live-demo runbook, recovery lines, and Q&amp;A prep.</p>
+
+<div class="box">
+  <b>The one sentence:</b> <i>"VoltSentry is a transparent software proxy that sits on the wire between an EV charger and its management backend, inspects every OCPP message in real time, and quarantines a compromised charger before it can commit billing fraud or destabilise the grid — including the slow data-drift attack that no rule engine can catch."</i>
+</div>
+
+<h2>Roles &amp; setup</h2>
+<table>
+  <tr><th>Role</th><th>Owns</th></tr>
+  <tr><td><b>Narrator</b></td><td>Talks the whole time. Never touches the keyboard. Owns the story and the Q&amp;A.</td></tr>
+  <tr><td><b>Driver</b></td><td>Advances slides, switches to the dashboard, points the cursor at what the narrator is describing.</td></tr>
+  <tr><td><b>Operator</b></td><td>Presses the attack keys on cue (<code>1 2 3 4</code>, <code>r</code> between each). Watches the terminals, calls out if a process dies.</td></tr>
+</table>
+
+<h3>Pre-flight checklist (do before you walk up)</h3>
+<ul>
+  <li>Start order, one terminal each: <code>python -m simulator.csms</code> → <code>python -m proxy.main</code> → <code>python -m simulator.twin</code> → <code>cd dashboard &amp;&amp; npm run dev</code> → <code>python -m cli.attack</code>. The proxy dials upstream at handshake, so CSMS must be up first.</li>
+  <li>Dashboard on screen, logged in (Demo Quick-Login), fleet charging, 8 stations green, transformer gauge steady.</li>
+  <li>Click <b>Start Monitoring (enable audio)</b> once — browser autoplay policy blocks the alert sound until a click.</li>
+  <li>Browser at 100% zoom, dark mode, full screen, OS notifications off.</li>
+  <li><b>Backup video</b> of one clean 4-attack run open in a background tab. If anything wedges mid-demo, cut to it and keep narrating.</li>
+  <li>Terminals tiled where judges can see the <code>[proxy]</code> / <code>[twin]</code> prefixes — they are part of the proof.</li>
+  <li>Run the full sequence once, cold, five minutes before you present.</li>
+</ul>
+
+<h2>The 4-minute timeline</h2>
+<table>
+  <tr><th>Time</th><th>On screen</th><th>Beat</th></tr>
+  <tr><td class="t">0:00</td><td>Deck slide 1–4</td><td>Problem → threat model → the approach. Fast.</td></tr>
+  <tr><td class="t">1:00</td><td>Deck slide 5–7</td><td>Architecture, then the two detection tiers. Land "the residual feature."</td></tr>
+  <tr><td class="t">1:45</td><td>Dashboard</td><td>Switch to the live NOC. Fleet charging.</td></tr>
+  <tr><td class="t">2:00</td><td>Dashboard</td><td>Press <code>1</code> — meter_spoof. CP-03 quarantined.</td></tr>
+  <tr><td class="t">2:30</td><td>Dashboard</td><td><code>r</code> then <code>2</code> — oscillation. Transformer gauge swings.</td></tr>
+  <tr><td class="t">2:55</td><td>Dashboard</td><td><code>r</code> then <code>3</code> — session shadow. Handshake refused.</td></tr>
+  <tr><td class="t">3:15</td><td>Dashboard</td><td><code>r</code> then <code>4</code> — subtle drift. <b>No rule fires.</b> Risk Index climbs past 0.65.</td></tr>
+  <tr><td class="t">3:45</td><td>Dashboard</td><td>Click <b>Export incident logs</b> — JSON downloads.</td></tr>
+  <tr><td class="t">3:55</td><td>Deck slide 9 / 12</td><td>"What's real" honesty beat, then the close.</td></tr>
+</table>
+
+<h2 class="pagebreak">Slide-by-slide script</h2>
+<p class="sub">Talking points are prompts, not a script to read aloud. Say them in your own words.</p>
+
+<div class="slidehdr"><span class="n">1</span><h3>Title</h3></div>
+<p class="point">One point: what this is, in one breath.</p>
+<div class="say"><ul>
+  <li>"EV charging networks run on a protocol called OCPP — JSON messages over a WebSocket between the charger and a central server."</li>
+  <li>"VoltSentry is an inline proxy that reads every one of those messages and stops a compromised charger before the damage reaches the backend or the grid."</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">2</span><h3>The problem</h3></div>
+<p class="point">One point: this is exposed infrastructure, and today's defences are too slow or too expensive.</p>
+<div class="say"><ul>
+  <li>Chargers are roadside hardware on weakly-authenticated connections — soft edge nodes on the energy grid.</li>
+  <li>Cloud platforms analyse this data in batches, minutes to hours later — after an attack has already landed.</li>
+  <li>You can't retrofit a firewall chip to millions of installed chargers. So the fix has to be pure software, and it has to be inline.</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">3</span><h3>Threat model</h3></div>
+<p class="point">One point: four concrete attacks, and the fourth is special.</p>
+<div class="say"><ul>
+  <li>Meter spoofing — bill near zero while real power flows. Grid oscillation — synchronised start/stop to trip a transformer. Session shadowing — hijack a live charger's session with a duplicate handshake.</li>
+  <li>"And the fourth — subtle drift — is a slow, compounding lie that never breaks a single threshold. Hold that one in mind; it's why the second detection tier exists."</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">4</span><h3>The approach</h3></div>
+<p class="point">One point: transparent, inline, drop-in — the CSMS never knows it's there.</p>
+<div class="say"><ul>
+  <li>A reverse proxy on the wire. Clean traffic is relayed straight through, both directions, untouched.</li>
+  <li>Every frame is parsed, the session state machine is enforced, and the detection engine scores it before it's forwarded.</li>
+  <li>On a hard violation: drop the frame, tell the charger to go unavailable, close the socket. Sub-millisecond design budget, zero hardware change.</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">5</span><h3>Architecture</h3></div>
+<p class="point">One point: one process on the wire, feeding one live dashboard.</p>
+<div class="do">Trace the diagram left to right with the cursor: fleet → proxy → CSMS, and the side branch proxy → dashboard + forensic log.</div>
+<div class="say"><ul>
+  <li>Station identity comes from the URL path, parsed at handshake — the proxy opens a matching upstream socket per charger.</li>
+  <li>OCPP replies don't carry the action name, so the proxy keeps its own call-correlation map. That's what makes the state machine possible.</li>
+  <li>The dashboard feed is a separate WebSocket on its own port — the browser talks to it natively.</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">6</span><h3>Tier-1 — deterministic rules</h3></div>
+<p class="point">One point: six rules, zero latency, they catch everything loud.</p>
+<div class="say"><ul>
+  <li>"These are physics and protocol invariants — power can't exceed the charger's rating, a session can't send meter values before it's authorised, the same charger ID can't hold two live sessions."</li>
+  <li>Point at <span class="rule">R6_METER_FRAUD</span>: "This one watches the reported energy total pull away from the reported power. Honest sessions keep those in lock-step; a skimming charger can't."</li>
+  <li>"Three of these quarantine the station outright — R2, R5, R6."</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">7</span><h3>Tier-2 — the drift problem</h3></div>
+<p class="point">One point: the residual feature is the whole trick.</p>
+<div class="say"><ul>
+  <li>"A slow drift stays inside every threshold — so it's not an outlier, and a rule engine is blind to it by construction."</li>
+  <li>"We give the model one engineered number: the reported energy total, minus the integral of reported power over time. Honest sessions hold that at zero. Any lie makes it climb — and it only ever climbs."</li>
+  <li>"Two models score it: an Isolation Forest on the session vector, and a CUSUM change-detector on the residual for a second opinion and a plain-English explanation."</li>
+</ul></div>
+
+<div class="slidehdr"><span class="n">8</span><h3>Demo intro</h3></div>
+<p class="point">One point: set expectations, then switch to the dashboard.</p>
+<div class="say"><ul>
+  <li>"Four keystrokes, four attacks. Watch the station grid and the Risk Index bar on each card."</li>
+  <li>"The last one is the one to watch — no rule will fire, and the system still catches it."</li>
+</ul></div>
+<div class="do">Driver switches to the live dashboard now. Leave the deck; you'll come back for slide 9.</div>
+
+<h2 class="pagebreak">Live-demo runbook</h2>
+<p class="sub">Operator presses keys in <code>cli/attack</code>. Always press <code>r</code> and wait for the fleet to go green again between attacks.</p>
+
+<h3>Attack 1 — <code>1</code> — meter_spoof</h3>
+<table>
+  <tr><th>Expected</th><td>CP-03 starts reporting ~5 kW while the battery keeps drawing ~120 kW. Within a few seconds the energy residual crosses the fraud threshold → <span class="rule">R6_METER_FRAUD</span> → card goes red, frame dropped, <b>Quarantined</b> badge, audio alert. Risk Index on CP-03 also spikes (Tier-2 agrees).</td></tr>
+</table>
+<div class="say"><ul>
+  <li>"CP-03 is now claiming five kilowatts. The battery says a hundred and twenty. Those two numbers have to reconcile over time — and they don't."</li>
+  <li>"R6 caught it, the proxy dropped the frame, told the charger to go offline, and cut the socket. That station is contained."</li>
+</ul></div>
+<div class="fallback">If it doesn't quarantine within ~8 s, say: "the residual is accumulating — there's the trip" as it fires; if it truly stalls, note "R6 fires on sustained under-reporting" and move to <code>r</code> then attack 2. Don't wait on camera.</div>
+
+<h3>Attack 2 — <code>r</code>, then <code>2</code> — fleet_oscillate</h3>
+<table>
+  <tr><th>Expected</th><td>All stations begin rapid start/stop. The transformer load gauge visibly swings. After ≥ 6 transitions in 10 s → <span class="rule">R3_OSCILLATION</span> fires fleet-wide (one badge, not eight).</td></tr>
+</table>
+<div class="say"><ul>
+  <li>"This is a coordinated attack — synchronised start/stop across the cluster to swing local load and trip a distribution transformer."</li>
+  <li>"R3 counts transitions in a sliding window. It's fleet-scoped on purpose — one finding, not noise."</li>
+</ul></div>
+<div class="fallback">If the gauge swing is subtle, point at the transition count / the R3 badge instead of the gauge.</div>
+
+<h3>Attack 3 — <code>r</code>, then <code>3</code> — session_shadow</h3>
+<table>
+  <tr><th>Expected</th><td>A second WebSocket opens to a charger ID that already has a live session. The proxy refuses it at the handshake → <span class="rule">R4_SESSION_UNIQUE</span>. The legitimate session is untouched.</td></tr>
+</table>
+<div class="say"><ul>
+  <li>"Someone just opened a parallel connection claiming to be CP-01, which is already online. That's a session hijack attempt."</li>
+  <li>"The proxy keeps a registry of live connections and rejects the duplicate before a single frame is exchanged. The real charger never notices."</li>
+</ul></div>
+
+<h3>Attack 4 — <code>r</code>, then <code>4</code> — subtle_drift <span class="sub">(the pitch)</span></h3>
+<table>
+  <tr><th>Expected</th><td>One station begins under-reporting power by a compounding ~2% per tick. <b>No Tier-1 rule fires</b> — every value stays legal. The Risk Index bar on that card rises and crosses 0.65 → amber <b>ML ANOMALY</b> badge.</td></tr>
+</table>
+<div class="say"><ul>
+  <li>"Every number this station is sending is inside spec. No rule can touch it."</li>
+  <li>"But the energy residual is climbing, and the model sees it. Watch the Risk Index — there it goes past the line. That's the attack a threshold engine can't catch, caught."</li>
+</ul></div>
+<div class="fallback">Known risk: the drift currently trips fast (~2–3 s in the benchmark), not the slow ~40 s climb. If it jumps quickly, say <i>"the score climbs and crosses the threshold — no rule involved"</i> and don't dwell. Do <b>not</b> promise a 40-second climb on stage until the drift rate is tuned.</div>
+
+<h3>Close the demo — <code>r</code></h3>
+<div class="do">Press <code>r</code> once more so the fleet is green when you cut back to the deck. Then click <b>Export incident logs</b> — a JSON file downloads. "Every detection is on the wire and in the forensic log."</div>
+
+<h2>Known risks &amp; recovery</h2>
+<table>
+  <tr><th>Risk</th><th>Recovery</th></tr>
+  <tr><td>A socket drops mid-demo</td><td>The dashboard auto-reconnects every 2 s — keep talking, it comes back. If it doesn't in ~5 s, cut to the backup video.</td></tr>
+  <tr><td>Audio alert silent</td><td>You forgot the <b>Start Monitoring</b> click in pre-flight. Don't stop to fix it — the visual is enough.</td></tr>
+  <tr><td>A process died</td><td>Operator says so quietly; Narrator keeps on the deck; restart in order CSMS → proxy → twin, or cut to the backup video.</td></tr>
+  <tr><td>Drift trips too fast</td><td>Use the fallback line above. It still proves the point — Tier-2 caught what Tier-1 can't.</td></tr>
+  <tr><td>"Reset" leaves a station stuck</td><td>Press <code>r</code> again; it re-runs Boot → Authorize → StartTransaction and resynchronises both sides.</td></tr>
+</table>
+
+<h2 class="pagebreak">Q&amp;A preparation</h2>
+
+<h3>"Isn't your simulation too simple? Is any of this real?"</h3>
+<p>The <b>protocol and the detection are real</b> — real OCPP 1.6-J framing, real call correlation, real session state machine, the actual rule and ML logic, the real quarantine mechanics. What's simulated is the <b>charger physics</b> and the <b>CSMS backend</b> — and the backend is a drop-in: point the proxy at SteVe or CitrineOS, both real open-source management systems, and nothing changes on our side. The attacks are synthesised because there is no public labelled corpus of OCPP attacks — that's true of the whole field.</p>
+
+<h3>"Why an Isolation Forest? Why not a deep model / LSTM?"</h3>
+<p>The reasoning architecture is the <b>two tiers</b>, not the estimator. For a five-dimensional conservation-law residual, a small model we can prove correct beats a big one we can't — and an LSTM in the forwarding path costs 100–1000× the inference latency, which breaks the "inline, sub-millisecond" claim. If we ever add a temporal model it runs out-of-band on a mirrored stream, off the critical path.</p>
+
+<h3>"Does this actually scale?"</h3>
+<p>Tier-1 rule evaluation is ~9 microseconds per frame, measured over 200k frames. One instance sustains thousands of frames per second; a 10,000-charger operator at one meter reading every 10 seconds is about 1,000 frames/sec — a handful of instances. Horizontal scale is charger-ID consistent hashing across replicas with the registries in Redis.</p>
+
+<h3>"What about TLS and authentication?"</h3>
+<p>Out of scope for a 48-hour localhost build, deliberately. In production VoltSentry terminates TLS and enforces the OCPP 2.0.1 security profiles — that's on the roadmap slide. The detection value is orthogonal to transport security: an authenticated charger can still be compromised and lie.</p>
+
+<h3>"How is this different from a web application firewall?"</h3>
+<p>A WAF doesn't speak OCPP. VoltSentry enforces the <b>session state machine</b> (you can't send meter values before you're authorised), <b>physical invariants</b> (power can't exceed the charger's rating), and <b>energy conservation</b> across a session. Those are domain rules a generic firewall has no concept of.</p>
+
+<h3>"How does R6 catch meter fraud without false-positiving honest sessions?"</h3>
+<p>It requires <i>both</i> a meaningful accumulated residual <i>and</i> a residual that is still climbing fast right now. A brief measurement wobble produces neither. Sustained under-reporting produces both, and the gap only widens.</p>
+
+<h3>"What's your false-positive rate?"</h3>
+<p>Be honest: the current benchmark is on a small recorded fixture, so the FPR figure isn't meaningful yet. The design target is zero Tier-1 false positives (they're deterministic invariants) and Tier-2 tuned against a real dataset — ACN-Data or ElaadNL — before any production claim. The harness to measure it exists; the dataset is the next step.</p>
+
+<h3>"Who buys this, and how is it deployed?"</h3>
+<p>Charge-point operators (CPOs) and CSMS vendors. It deploys as an ingress sidecar in front of the existing CSMS — no charger firmware change, no backend change. That's the entire commercial pitch: security you can add without touching the fleet.</p>
+
+<h3>"What's genuinely novel here?"</h3>
+<p>Inline, transport-layer, OCPP-aware detection with active quarantine — and specifically the energy-conservation residual as a feature that makes slow billing fraud detectable from the wire alone, without ground-truth power measurement.</p>
+
+<hr>
+<p class="sub" style="font-size:.85rem">VoltSentry · CodeToCreate, VIT Vellore · Generated for the team. Numbers in this guide trace to the codebase and its test suite; update them if the code changes before you present.</p>
+
+</body>
+</html>

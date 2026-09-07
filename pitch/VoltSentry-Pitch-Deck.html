@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoltSentry — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0F17; --surface:#111827; --elevated:#1E293B; --line:#1E293B; --line-2:#334155;
+    --text:#E2E8F0; --muted:#94A3B8; --dim:#64748B;
+    --healthy:#10B981; --active:#22D3EE; --warn:#F59E0B; --critical:#EF4444;
+    --mono:'JetBrains Mono','SFMono-Regular',ui-monospace,Consolas,monospace;
+    --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#05070c;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  .deck{}
+  .slide{
+    position:relative;width:100vw;height:100vh;display:none;
+    padding:6vh 7vw;flex-direction:column;background:var(--bg);
+    border-bottom:1px solid #000;
+  }
+  .slide.active{display:flex}
+  .kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:1.4rem}
+  h1{font-size:3.4rem;line-height:1.06;letter-spacing:-.02em;font-weight:800;margin-bottom:1rem}
+  h2{font-size:2.15rem;line-height:1.12;letter-spacing:-.015em;font-weight:800;margin-bottom:1.6rem}
+  h2 .em{color:var(--active)}
+  .lede{font-size:1.35rem;line-height:1.5;color:var(--muted);max-width:52ch}
+  ul{list-style:none;display:flex;flex-direction:column;gap:.95rem;margin-top:.4rem}
+  li{position:relative;padding-left:1.5rem;font-size:1.18rem;line-height:1.45;color:var(--text);max-width:64ch}
+  li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--healthy)}
+  li.warn::before{background:var(--warn)} li.crit::before{background:var(--critical)} li.act::before{background:var(--active)}
+  .mono{font-family:var(--mono)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:2.4rem;margin-top:.6rem;flex:1;align-items:start}
+  .cols-3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.4rem;margin-top:1rem}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1.3rem 1.4rem}
+  .card h3{font-size:1.05rem;font-weight:700;margin-bottom:.5rem;display:flex;align-items:center;gap:.55rem}
+  .card p{font-size:1rem;line-height:1.45;color:var(--muted)}
+  .tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;padding:.15rem .45rem;border-radius:4px;border:1px solid var(--line-2);color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .d-healthy{background:var(--healthy)} .d-active{background:var(--active)} .d-warn{background:var(--warn)} .d-crit{background:var(--critical)}
+  table{border-collapse:collapse;width:100%;margin-top:.8rem;font-size:1rem}
+  th,td{text-align:left;padding:.7rem .8rem;border-bottom:1px solid var(--line)}
+  th{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:500}
+  td .rid{font-family:var(--mono);color:var(--active);font-size:.92rem}
+  td.q{font-family:var(--mono);font-size:.82rem}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6rem;margin-top:1.4rem}
+  .stat .n{font-family:var(--mono);font-size:2.9rem;font-weight:700;letter-spacing:-.02em}
+  .stat .l{font-size:.95rem;color:var(--muted);margin-top:.3rem;line-height:1.35}
+  .n.healthy{color:var(--healthy)} .n.active{color:var(--active)} .n.warn{color:var(--warn)}
+  .flow{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin-top:1.6rem;font-family:var(--mono);font-size:.92rem}
+  .node{background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:.7rem .9rem;line-height:1.3}
+  .node.hl{border-color:var(--healthy);color:var(--healthy)}
+  .arrow{color:var(--dim)}
+  .foot{position:absolute;left:7vw;right:7vw;bottom:3.4vh;display:flex;justify-content:space-between;font-family:var(--mono);font-size:.72rem;color:var(--dim);letter-spacing:.1em}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:1.6rem;margin-top:1rem}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1.4rem}
+  .panel h3{font-size:.8rem;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.9rem}
+  .panel.real h3{color:var(--healthy)} .panel.sim h3{color:var(--warn)}
+  .panel ul{gap:.6rem;margin:0}
+  .panel li{font-size:1rem;padding-left:1.3rem}
+  .panel li::before{top:.55em;width:6px;height:6px}
+  .panel.sim li::before{background:var(--warn)}
+  .title-slide{justify-content:center}
+  .title-slide h1{font-size:4.6rem}
+  .brandline{display:flex;align-items:center;gap:.8rem;margin-bottom:2.2rem}
+  .brandmark{width:34px;height:34px;border:2px solid var(--healthy);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--healthy);font-family:var(--mono);font-weight:700}
+  .brandtxt{font-family:var(--mono);letter-spacing:.22em;text-transform:uppercase;font-size:1rem}
+  .nav{position:fixed;bottom:14px;right:18px;font-family:var(--mono);font-size:.72rem;color:var(--dim);z-index:10}
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    html,body{background:#0B0F17}
+    .slide{display:flex!important;page-break-after:always;height:720px;width:1280px;padding:52px 72px}
+    .nav{display:none}
+    .foot{bottom:26px}
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- 1 -->
+  <section class="slide title-slide active">
+    <div class="brandline"><div class="brandmark">V</div><div class="brandtxt">VoltSentry</div></div>
+    <h1>An inline security proxy for<br>EV charging networks.</h1>
+    <p class="lede" style="margin-top:1.4rem">Transparent OCPP 1.6-J reverse proxy that inspects every WebSocket frame in real time and quarantines compromised chargers before they reach the backend or destabilise the grid.</p>
+    <div class="foot"><span>CODETOCREATE · VIT VELLORE</span><span>DUAL-TIER THREAT DETECTION</span></div>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide">
+    <div class="kicker">The problem</div>
+    <h2>Public EV charging runs on <span class="em">weakly-authed WebSockets</span>.</h2>
+    <div class="cols">
+      <ul>
+        <li>Chargers speak <span class="mono">OCPP 1.6-J</span> — JSON frames over a persistent WebSocket to a central management system (CSMS).</li>
+        <li>Stations are physically exposed roadside hardware on connections that are often barely authenticated.</li>
+        <li class="act">They are soft cyber-physical edge nodes sitting on critical energy infrastructure.</li>
+      </ul>
+      <div class="card">
+        <h3><span class="dot d-warn"></span>Why it isn't already solved</h3>
+        <p style="margin-bottom:.8rem"><b>Cloud CSMS platforms audit after the fact</b> — batch analysis minutes or hours after ingestion, long after an attack has landed.</p>
+        <p><b>Hardware retrofits are economically dead</b> — you cannot ship a firewall chip to millions of deployed stations.</p>
+      </div>
+    </div>
+    <div class="foot"><span>02</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide">
+    <div class="kicker">Threat model</div>
+    <h2>Four attack vectors on the charging control plane.</h2>
+    <div class="cols-3">
+      <div class="card"><h3><span class="dot d-crit"></span>Meter spoofing</h3><p>Under-report delivered energy so a session bills near zero while real power flows. Billing fraud at fleet scale.</p></div>
+      <div class="card"><h3><span class="dot d-crit"></span>Grid oscillation</h3><p>Synchronised rapid start/stop of high-power chargers across a cluster to swing local load and trip a distribution transformer.</p></div>
+      <div class="card"><h3><span class="dot d-warn"></span>Session shadowing</h3><p>A parallel WebSocket handshake reusing a live <span class="mono">chargePointId</span> to displace or seize a legitimate charger's session.</p></div>
+      <div class="card"><h3><span class="dot d-warn"></span>Subtle data drift</h3><p>Slow compounding falsification that stays inside every hard threshold — invisible to any rule engine.</p></div>
+    </div>
+    <div class="foot"><span>03</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide">
+    <div class="kicker">The approach</div>
+    <h2>Pure software at the <span class="em">transport layer</span>.</h2>
+    <div class="cols">
+      <ul>
+        <li>A transparent reverse proxy between the charger and the CSMS. Clean traffic is relayed <span class="mono">8000 → 9000</span> untouched, both directions.</li>
+        <li class="act">Sub-millisecond design budget. No hardware change. Drop-in in front of an existing CSMS — the backend never knows it's there.</li>
+        <li>Every frame is parsed, the session state machine is enforced, and a dual-tier detection engine scores it before it is forwarded.</li>
+        <li class="warn">On a Tier-1 block: drop the frame, send <span class="mono">ChangeAvailability</span> to the charger, close the socket <span class="mono">4001</span>.</li>
+      </ul>
+      <div class="card">
+        <h3><span class="dot d-active"></span>Station identity</h3>
+        <p>Taken from the URL path — <span class="mono">ws://…/ocpp/CP-04</span> — parsed at handshake, before any frame arrives. The proxy opens the matching upstream socket per station and keeps a <span class="mono">pending</span> call map so a <span class="mono">CALLRESULT</span> can be correlated to the <span class="mono">CALL</span> that produced it.</p>
+      </div>
+    </div>
+    <div class="foot"><span>04</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide">
+    <div class="kicker">Architecture</div>
+    <h2>One process on the wire. Two detection tiers. One live feed.</h2>
+    <div class="flow">
+      <span class="node">charger fleet<br>CP-01…CP-08</span>
+      <span class="arrow">──ws:8000──▶</span>
+      <span class="node hl">VoltSentry proxy<br>rules.py · ml_engine.py · state.py</span>
+      <span class="arrow">──ws:9000──▶</span>
+      <span class="node">mock CSMS<br>(swappable)</span>
+    </div>
+    <div class="flow" style="margin-top:1rem">
+      <span class="arrow" style="margin-left:15rem">└─ ws:8100 ──▶</span>
+      <span class="node">NOC dashboard<br>Next.js · native WebSocket</span>
+      <span class="arrow">&nbsp;&nbsp;└─▶</span>
+      <span class="node">logs/incidents.jsonl</span>
+    </div>
+    <ul style="margin-top:2rem">
+      <li>OCPP frames are JSON <b>arrays</b> — <span class="mono">[2,id,action,payload]</span> / <span class="mono">[3,id,payload]</span> / <span class="mono">[4,id,code,desc,details]</span>. A <span class="mono">CALLRESULT</span> carries no action name; the proxy correlates it itself.</li>
+      <li>The dashboard feed is a <b>separate</b> plain WebSocket on <span class="mono">:8100</span> — no Socket.io, no path-routing on the OCPP port.</li>
+    </ul>
+    <div class="foot"><span>05</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide">
+    <div class="kicker">Detection engine</div>
+    <h2>Tier-1 catches the loud attacks at <span class="em">zero latency</span>.</h2>
+    <table>
+      <tr><th>Rule</th><th>Checks</th><th>Trips when</th><th>Action</th></tr>
+      <tr><td class="rid">R1_STATE_ORDER</td><td>per-station FSM</td><td class="q">MeterValues / StopTransaction with no live Authorize → StartTransaction</td><td class="q">log</td></tr>
+      <tr><td class="rid">R2_PHYSICS</td><td>CC-CV envelope</td><td class="q">power &gt; 150 kW, or &gt; 60 kW while SoC &gt; 80%, or &lt; 0</td><td class="q">quarantine</td></tr>
+      <tr><td class="rid">R3_OSCILLATION</td><td>sliding window</td><td class="q">≥ 6 start/stop transitions fleet-wide in 10 s</td><td class="q">log</td></tr>
+      <tr><td class="rid">R4_SESSION_UNIQUE</td><td>connection registry</td><td class="q">second handshake for a cpid with a live session</td><td class="q">reject at handshake</td></tr>
+      <tr><td class="rid">R5_TXN_INTEGRITY</td><td>transaction map</td><td class="q">MeterValues.transactionId unknown or owned by another cpid</td><td class="q">quarantine</td></tr>
+      <tr><td class="rid">R6_METER_FRAUD</td><td>energy-residual rate</td><td class="q">reported energy register pulling away from reported power faster than an honest session ever does</td><td class="q">quarantine</td></tr>
+    </table>
+    <div class="foot"><span>06</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide">
+    <div class="kicker">Detection engine</div>
+    <h2>Tier-2 catches the one attack <span class="em">a rule cannot</span>.</h2>
+    <div class="cols">
+      <ul>
+        <li>Subtle drift stays inside every hard threshold by construction — so it is not a point outlier and a threshold engine stays silent.</li>
+        <li class="act">The fix is an engineered feature the proxy computes from the wire alone: <span class="mono">energy_residual = reported register − ∫ reported power dt</span>.</li>
+        <li>Honest sessions hold this near zero. Any divergence between reported instantaneous power and the accumulating energy register makes it climb monotonically.</li>
+        <li>Scored two ways: an <b>Isolation Forest</b> on the 5-dim session vector, and an offline <b>CUSUM</b> change-detector on the residual for corroboration and explainability.</li>
+      </ul>
+      <div class="card">
+        <h3><span class="dot d-active"></span>The 5-dim vector</h3>
+        <p class="mono" style="font-size:.9rem;line-height:1.7">[ power_kw,<br>&nbsp;&nbsp;soc,<br>&nbsp;&nbsp;dp_dt,<br>&nbsp;&nbsp;duration_sec,<br>&nbsp;&nbsp;energy_residual_kwh ]</p>
+        <p style="margin-top:.9rem"><span class="mono">IsolationForest(n_estimators=100, contamination=0.02, random_state=42)</span>, score normalisation pinned at fit time. Alert on <span class="mono">score &gt; 0.65</span>. Samples 1–2 of a session are not scored.</p>
+      </div>
+    </div>
+    <div class="foot"><span>07</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide">
+    <div class="kicker">Live demo · 4 minutes</div>
+    <h2>Four keystrokes. Four detections.</h2>
+    <table>
+      <tr><th>Key</th><th>Attack</th><th>What the judge sees</th><th>Caught by</th></tr>
+      <tr><td class="q">1</td><td>meter_spoof</td><td class="q">CP-03 reports 5 kW while drawing ~120 kW → energy residual climbs → red, frame dropped, station quarantined, alert</td><td class="rid">R6 + Tier-2</td></tr>
+      <tr><td class="q">2</td><td>fleet_oscillate</td><td class="q">1 Hz start/stop across the fleet → transformer gauge swings → fleet-wide badge</td><td class="rid">R3</td></tr>
+      <tr><td class="q">3</td><td>session_shadow</td><td class="q">duplicate handshake on a live cpid → shadow socket refused at the handshake</td><td class="rid">R4</td></tr>
+      <tr><td class="q">4</td><td>subtle_drift</td><td class="q">−2%/tick compounding under-report → <b>no Tier-1 rule fires</b> → Risk Index rises past 0.65, amber badge</td><td class="rid">Tier-2 only</td></tr>
+      <tr><td class="q">r</td><td>reset</td><td class="q">clears quarantine, reconnects the fleet clean — ready for the next attack</td><td>—</td></tr>
+    </table>
+    <p class="lede" style="font-size:1.1rem;margin-top:1.4rem">The <span class="mono">subtle_drift</span> beat is the pitch: the one attack a rule engine structurally cannot catch, and the reason Tier-2 exists.</p>
+    <div class="foot"><span>08</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 9 -->
+  <section class="slide">
+    <div class="kicker">Credibility</div>
+    <h2>What is real, and what is simulated.</h2>
+    <div class="two">
+      <div class="panel real">
+        <h3>Real</h3>
+        <ul>
+          <li>OCPP 1.6-J wire format, array framing, CALL/CALLRESULT correlation</li>
+          <li>Per-station session FSM and transaction registry</li>
+          <li>All detection logic — Tier-1 rules R1–R6, Tier-2 Isolation Forest + CUSUM maths</li>
+          <li>Active quarantine: ChangeAvailability downstream, socket close 4001, un-quarantine on reconnect</li>
+          <li>Forensic JSON logging and the live NOC dashboard</li>
+        </ul>
+      </div>
+      <div class="panel sim">
+        <h3>Simulated / in progress</h3>
+        <ul>
+          <li>Charger fleet physics — a CC-CV battery model, not real hardware</li>
+          <li>The CSMS backend — an ~80-line mock, swappable for SteVe or CitrineOS</li>
+          <li>The attacks — synthesised; there is no public labelled OCPP-attack corpus</li>
+          <li>Tier-2 baseline is fit on a recorded feed fixture, not yet an external dataset</li>
+          <li>End-to-end added-latency instrumentation</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot"><span>09</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 10 -->
+  <section class="slide">
+    <div class="kicker">Where it stands</div>
+    <h2>Measured, not asserted.</h2>
+    <div class="stats">
+      <div class="stat"><div class="n healthy">82</div><div class="l">automated tests passing — rules, ML engine, OCPP parsing, battery model, dataset loader</div></div>
+      <div class="stat"><div class="n active">~9 µs</div><div class="l">Tier-1 rule evaluation per frame (mean); p99 &lt; 25 µs over 200k frames</div></div>
+      <div class="stat"><div class="n warn">6 + 2</div><div class="l">deterministic rules live, plus a two-model Tier-2 (Isolation Forest + CUSUM)</div></div>
+    </div>
+    <ul style="margin-top:2.4rem">
+      <li>Tier-2 is wired into the live relay — every telemetry frame carries a Risk Index; both meter-spoof and drift are flagged in the offline benchmark.</li>
+      <li class="warn">Open before final rehearsal: tune drift rate for a visible on-stage climb; re-fit Tier-2 on a real dataset (ACN-Data / ElaadNL); instrument end-to-end latency.</li>
+    </ul>
+    <div class="foot"><span>10</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 11 -->
+  <section class="slide">
+    <div class="kicker">Beyond the hackathon</div>
+    <h2>A real path to production.</h2>
+    <div class="cols-3">
+      <div class="card"><h3><span class="dot d-active"></span>Protocol</h3><p>OCPP 2.0.1 device model, the three security profiles (Basic / TLS / mutual-TLS), ISO 15118 Plug &amp; Charge, smart-charging profiles.</p></div>
+      <div class="card"><h3><span class="dot d-active"></span>Deployment</h3><p>Runs as a CPO ingress sidecar. Horizontal scale via cpid-consistent-hash routing with Redis-backed shared registries. Tested inline against a real open-source CSMS (SteVe / CitrineOS).</p></div>
+      <div class="card"><h3><span class="dot d-active"></span>Detection</h3><p>Tier-2 retrained on real fleet CDRs; per-station personalisation; federated learning across CPOs so the model improves without sharing raw session data.</p></div>
+    </div>
+    <p class="lede" style="font-size:1.1rem;margin-top:1.8rem">Capacity math from the measured Tier-1 cost: one instance sustains thousands of frames/sec; a 10k-charger CPO at 0.1 Hz MeterValues ≈ 1k fps — a handful of instances.</p>
+    <div class="foot"><span>11</span><span>VOLTSENTRY</span></div>
+  </section>
+
+  <!-- 12 -->
+  <section class="slide title-slide">
+    <div class="brandline"><div class="brandmark">V</div><div class="brandtxt">VoltSentry</div></div>
+    <h1>Inline. Transparent.<br>Sub-millisecond.</h1>
+    <p class="lede" style="margin-top:1.4rem">A drop-in security layer for EV charging that catches billing fraud, grid attacks, session hijacks — and the slow drift a rule engine never will.</p>
+    <div class="flow" style="margin-top:2.4rem">
+      <span class="node">python -m simulator.csms</span><span class="arrow">→</span>
+      <span class="node">python -m proxy.main</span><span class="arrow">→</span>
+      <span class="node">python -m simulator.twin</span><span class="arrow">→</span>
+      <span class="node">npm run dev</span>
+    </div>
+    <div class="foot"><span>12</span><span>THANK YOU</span></div>
+  </section>
+
+</div>
+
+<div class="nav">← / → &nbsp;·&nbsp; <span id="pg">1</span>/12</div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];let i=0;
+  const show=n=>{i=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,k)=>s.classList.toggle('active',k===i));document.getElementById('pg').textContent=i+1};
+  addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' ')show(i+1);
+    if(e.key==='ArrowLeft'||e.key==='PageUp')show(i-1);
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+  });
+  addEventListener('click',e=>{if(!e.target.closest('a'))show(i+1)});
+  show(0);
+</script>
+</body>
+</html>
