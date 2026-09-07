@@ -48,6 +48,9 @@ class SessionFeatures:
     # carried forward into the next sample (not part of the ML vector)
     energy_integral_kwh: float
     sample_count: int
+    # register reading when the proxy started watching this session; the
+    # residual is measured relative to it (see compute_session_features).
+    energy_register_start_kwh: float = 0.0
 
     def as_vector(self) -> list[float]:
         """The 5-dim vector in the frozen FEATURE_ORDER."""
@@ -65,6 +68,7 @@ def compute_session_features(
     energy_integral_kwh: float,
     session_start_ts: Optional[float],
     sample_count: int,
+    energy_register_start_kwh: Optional[float] = None,
 ) -> SessionFeatures:
     """Derive the feature vector for one MeterValues sample. Pure.
 
@@ -81,8 +85,17 @@ def compute_session_features(
         dt = max(0.0, ts - prev_ts)
         dp_dt = 0.0 if dt == 0.0 else (power_kw - (prev_power_kw or 0.0)) / dt
 
+    # The anchor is established once, on the first sample of a session, and
+    # threaded forward by the caller thereafter. A caller that does not track it
+    # gets 0.0, i.e. the plain FIX-9 definition.
+    if energy_register_start_kwh is not None:
+        anchor = energy_register_start_kwh
+    elif prev_ts is None:
+        anchor = energy_register_kwh
+    else:
+        anchor = 0.0
     new_integral = energy_integral_kwh + power_kw * (dt / 3600.0)
-    residual = energy_register_kwh - new_integral
+    residual = (energy_register_kwh - anchor) - new_integral
     duration = 0.0 if session_start_ts is None else max(0.0, ts - session_start_ts)
 
     return SessionFeatures(
@@ -93,6 +106,7 @@ def compute_session_features(
         energy_residual_kwh=residual,
         energy_integral_kwh=new_integral,
         sample_count=sample_count + 1,
+        energy_register_start_kwh=anchor,
     )
 
 

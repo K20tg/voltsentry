@@ -41,6 +41,9 @@ class StationState:
     last_power_kw: Optional[float] = None
     energy_integral_kwh: float = 0.0
     sample_count: int = 0
+    # Register reading when this session was first observed; the residual is
+    # measured from it, so attaching mid-session does not read as fraud.
+    energy_register_start_kwh: Optional[float] = None
 
     # kW of the last MeterValues, kept for the fleet grid aggregate.
     last_power_reported_kw: float = 0.0
@@ -64,12 +67,14 @@ class StationState:
             energy_integral_kwh=self.energy_integral_kwh,
             session_start_ts=self.session_start_ts,
             sample_count=self.sample_count,
+            energy_register_start_kwh=self.energy_register_start_kwh,
         )
         self.last_ts = ts
         self.last_power_kw = power_kw
         self.last_power_reported_kw = power_kw
         self.energy_integral_kwh = f.energy_integral_kwh
         self.sample_count = f.sample_count
+        self.energy_register_start_kwh = f.energy_register_start_kwh
         return f
 
 
@@ -112,6 +117,7 @@ class ProxyState:
         st.last_power_reported_kw = 0.0
         st.energy_integral_kwh = 0.0
         st.sample_count = 0
+        st.energy_register_start_kwh = None
 
     # ---- connection registry (R4) --------------------------------------
     def register_connection(self, cpid: str) -> bool:

@@ -9,6 +9,7 @@ including the two contract corners that bite on camera:
 """
 
 import numpy as np
+import pytest
 
 from proxy.ml_engine import (
     FEATURE_ORDER,
@@ -289,3 +290,53 @@ def test_benchmark_smoke_returns_expected_keys():
         "cusum_recall_subtle_drift",
     ):
         assert key in result
+
+
+# ------------------------- residual anchoring (mid-session attach)
+# energy_residual_kwh is defined so that "honest sessions hold it near zero"
+# (CONTEXT.md FIX-9). That only holds if the meter register reads zero at the
+# moment the proxy starts integrating. It does not when the proxy attaches to a
+# session already in progress -- a proxy restart, or a charger that reconnects
+# mid-charge -- where the register already reads tens of kWh while the integral
+# restarts at zero. Unanchored, the whole register shows up as residual and
+# every honest station looks like it is hiding megawatts.
+
+def test_residual_is_zero_on_first_sample_of_a_session_already_in_progress():
+    f = _first(energy_register_kwh=45.07)
+    assert abs(f.energy_residual_kwh) < 1e-9
+
+
+def test_residual_stays_near_zero_for_honest_charging_after_mid_session_attach():
+    # Attach at 45.07 kWh, then charge honestly at 120 kW for one hour.
+    first = _first(energy_register_kwh=45.07)
+    second = compute_session_features(
+        power_kw=120.0,
+        soc=60.0,
+        energy_register_kwh=45.07 + 120.0,  # register advanced by exactly 120 kWh
+        ts=1000.0 + 3600.0,
+        prev_ts=1000.0,
+        prev_power_kw=120.0,
+        energy_integral_kwh=first.energy_integral_kwh,
+        session_start_ts=1000.0,
+        sample_count=first.sample_count,
+        energy_register_start_kwh=first.energy_register_start_kwh,
+    )
+    assert abs(second.energy_residual_kwh) < 1e-6
+
+
+def test_residual_still_climbs_when_a_station_under_reports_power():
+    # Attach at 45.07 kWh, register advances 120 kWh, but only 5 kW is reported.
+    first = _first(energy_register_kwh=45.07)
+    second = compute_session_features(
+        power_kw=5.0,
+        soc=60.0,
+        energy_register_kwh=45.07 + 120.0,
+        ts=1000.0 + 3600.0,
+        prev_ts=1000.0,
+        prev_power_kw=5.0,
+        energy_integral_kwh=first.energy_integral_kwh,
+        session_start_ts=1000.0,
+        sample_count=first.sample_count,
+        energy_register_start_kwh=first.energy_register_start_kwh,
+    )
+    assert second.energy_residual_kwh == pytest.approx(115.0, abs=1e-6)

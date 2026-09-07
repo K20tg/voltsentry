@@ -9,6 +9,7 @@ from shared.schemas import StationStatus
 from proxy.rules import (
     OscillationDetector,
     ThreatThrottle,
+    check_meter_fraud,
     check_physics,
     check_session_unique,
     check_state_order,
@@ -200,3 +201,59 @@ def test_no_quarantine_on_fleetwide_or_transient_rules():
     assert should_quarantine("R3_OSCILLATION") is False
     assert should_quarantine("R1_STATE_ORDER") is False
     assert should_quarantine("R4_SESSION_UNIQUE") is False
+
+
+# ------------------------------------------------------- R6 meter fraud
+# energy_residual_kwh = reported register - integral(reported power dt).
+# An honest session holds this on its N(0, 0.05) baseline (CONTEXT.md FIX-9).
+# A station under-reporting power while its register accrues the truth makes it
+# climb monotonically, which is the direct signature of billing fraud.
+#
+# Discriminating meter_spoof from subtle_drift is the whole design constraint:
+# spoof reports a flat 5 kW against a real ~120 kW, so the residual accrues at a
+# constant (120-5)/3600 = 0.032 kWh/s from the first sample. subtle_drift only
+# compounds -2%/tick, so it reaches 0.428 kWh by 40 s -- which means any plain
+# absolute threshold fast enough to catch spoof also trips drift before the ML
+# score crosses 0.65, and the "ML only" demo beat dies. The mean rate separates
+# them: drift does not reach 0.02 kWh/s until ~118 s.
+
+def test_r6_clean_session_passes():
+    # Honest session: residual sits on its noise baseline after a full minute.
+    assert check_meter_fraud(energy_residual_kwh=0.04, duration_sec=60.0) is None
+
+
+def test_r6_meter_spoof_trips_within_ten_seconds():
+    # 5 kW reported against a real 120 kW draw => 0.032 kWh/s.
+    v = check_meter_fraud(energy_residual_kwh=0.319, duration_sec=10.0)
+    assert v is not None and v.rule_id == "R6_METER_FRAUD"
+    assert v.severity == "high"
+
+
+def test_r6_subtle_drift_does_not_trip_before_the_ml_badge():
+    # The headline demo beat: at 40 s subtle_drift must still be ML-only.
+    assert check_meter_fraud(energy_residual_kwh=0.428, duration_sec=40.0) is None
+
+
+def test_r6_sustained_drift_eventually_trips():
+    # Two minutes of compounding under-report is no longer subtle.
+    v = check_meter_fraud(energy_residual_kwh=2.511, duration_sec=120.0)
+    assert v is not None and v.rule_id == "R6_METER_FRAUD"
+
+
+def test_r6_small_residual_below_floor_passes():
+    # A high rate over a tiny window is startup jitter, not fraud.
+    assert check_meter_fraud(energy_residual_kwh=0.2, duration_sec=1.0) is None
+
+
+def test_r6_first_sample_has_no_duration_and_passes():
+    # duration_sec is 0.0 on sample 1; the rule must not divide by zero.
+    assert check_meter_fraud(energy_residual_kwh=0.0, duration_sec=0.0) is None
+
+
+def test_r6_negative_residual_passes():
+    # Over-reporting energy is not the under-report fraud R6 detects.
+    assert check_meter_fraud(energy_residual_kwh=-1.5, duration_sec=60.0) is None
+
+
+def test_r6_quarantines():
+    assert should_quarantine("R6_METER_FRAUD") is True

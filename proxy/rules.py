@@ -10,6 +10,7 @@ Trip table (CONTEXT.md §5.B):
   R3_OSCILLATION   >= 6 Start/Stop transitions fleet-wide in a 10 s window
   R4_SESSION_UNIQUE second handshake for a cpid with a live session
   R5_TXN_INTEGRITY  MeterValues.transactionId unknown or owned by another cpid
+  R6_METER_FRAUD   energy residual climbing faster than an honest session ever does
 """
 
 from __future__ import annotations
@@ -25,6 +26,25 @@ from proxy.state import ProxyState, StationState
 MAX_POWER_KW = 150.0
 CV_TAPER_POWER_KW = 60.0
 CV_TAPER_SOC = 80.0
+
+# R6 meter-fraud envelope. energy_residual_kwh is the reported register minus
+# the integral of reported power (CONTEXT.md FIX-9); an honest session holds it
+# on its N(0, 0.05) baseline, so anything climbing steadily is a station whose
+# meter disagrees with its own power reports.
+#
+# The rule is a *rate*, not an absolute level, because absolute level cannot
+# separate the two under-reporting attacks. meter_spoof reports a flat 5 kW
+# against a real ~120 kW, accruing 0.032 kWh/s from the first sample.
+# subtle_drift compounds -2%/tick and reaches 0.428 kWh by 40 s -- so any
+# absolute threshold low enough to catch a spoof quickly also trips drift
+# before its ML score crosses 0.65, and Tier-2's whole reason for existing
+# stops being demonstrable. By mean rate the two are far apart: drift does not
+# reach 0.02 kWh/s until ~118 s, by which point it is no longer subtle.
+#
+# The floor keeps startup jitter (one slow frame early in a session) from
+# looking like a high rate over a tiny window.
+METER_FRAUD_MIN_RESIDUAL_KWH = 0.25
+METER_FRAUD_RATE_KWH_PER_SEC = 0.02
 
 # Actions that are only legal inside a live session (R1).
 _SESSION_ONLY_ACTIONS = {"MeterValues", "StopTransaction"}
@@ -56,6 +76,28 @@ def check_physics(power_kw: float, soc: float) -> Optional[RuleViolation]:
             f"power {power_kw:.1f} kW above CV taper at SoC {soc:.0f}%",
         )
     return None
+
+
+def check_meter_fraud(
+    energy_residual_kwh: float, duration_sec: float
+) -> Optional[RuleViolation]:
+    """R6 — the energy register is drifting away from the reported power.
+
+    Only positive residual counts: that is the station claiming less power than
+    its own meter accrued, which is the direction that under-bills. A negative
+    residual means the register lags the reports, which is not this fraud.
+    """
+    if duration_sec <= 0.0 or energy_residual_kwh < METER_FRAUD_MIN_RESIDUAL_KWH:
+        return None
+    rate = energy_residual_kwh / duration_sec
+    if rate < METER_FRAUD_RATE_KWH_PER_SEC:
+        return None
+    return RuleViolation(
+        "R6_METER_FRAUD",
+        "high",
+        f"meter under-reporting: {energy_residual_kwh:.2f} kWh unaccounted "
+        f"in {duration_sec:.0f}s ({rate * 3600:.0f} kW hidden)",
+    )
 
 
 def check_state_order(station: StationState, action: str) -> Optional[RuleViolation]:
@@ -124,7 +166,7 @@ _FLEET_KEY = "*fleet*"
 # reporting forged data is compromised, so it is quarantined. Fleet-wide (R3)
 # and handshake-time (R4) rules alert only — quarantining on R3 would sever all
 # eight stations on an oscillate, and R4 is already rejected at the handshake.
-QUARANTINE_RULES = {"R2_PHYSICS", "R5_TXN_INTEGRITY"}
+QUARANTINE_RULES = {"R2_PHYSICS", "R5_TXN_INTEGRITY", "R6_METER_FRAUD"}
 
 
 def should_quarantine(rule_id: str) -> bool:

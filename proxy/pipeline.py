@@ -129,8 +129,12 @@ async def _raise_ml_threat(cpid: str, ml_score: float, raw: str, broadcast: Broa
 
 async def _emit_telemetry(
     state: ProxyState, cpid: str, mv: dict, raw: str, broadcast: Broadcast
-) -> None:
-    """Fold a MeterValues into state, score it, and broadcast a TelemetryEvent."""
+):
+    """Fold a MeterValues into state, score it, and broadcast a TelemetryEvent.
+
+    Returns the SessionFeatures so the Tier-1 pass can judge the energy residual
+    (R6) off the same accumulators, rather than integrating the session twice.
+    """
     station = state.station(cpid)
     feats = station.record_meter_sample(
         power_kw=mv["power_kw"],
@@ -155,10 +159,11 @@ async def _emit_telemetry(
         )
     except Exception as exc:  # never let one bad frame kill the feed
         print(f"[proxy] {cpid} telemetry build failed: {exc}", flush=True)
-        return
+        return feats
     await broadcast(event)
     if ml_score > ml_engine.ML_ALERT_THRESHOLD:
         await _raise_ml_threat(cpid, ml_score, raw, broadcast)
+    return feats
 
 
 async def inspect_upstream(
@@ -199,13 +204,14 @@ async def inspect_upstream(
         state.apply_authorize(cpid)
     elif action == "MeterValues":
         mv = ocpp.extract_meter_values(frame.payload or {})
-        await _emit_telemetry(state, cpid, mv, raw, broadcast)
+        feats = await _emit_telemetry(state, cpid, mv, raw, broadcast)
 
         quarantine_uid: Optional[str] = None
         violations = [
             rules.check_state_order(station, action),
             rules.check_txn_integrity(state, cpid, (frame.payload or {}).get("transactionId")),
             rules.check_physics(mv["power_kw"], mv["soc"]),
+            rules.check_meter_fraud(feats.energy_residual_kwh, feats.duration_sec),
         ]
         for violation in violations:
             if not violation:
