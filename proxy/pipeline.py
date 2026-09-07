@@ -211,7 +211,7 @@ async def inspect_upstream(
             rules.check_state_order(station, action),
             rules.check_txn_integrity(state, cpid, (frame.payload or {}).get("transactionId")),
             rules.check_physics(mv["power_kw"], mv["soc"]),
-            rules.check_meter_fraud(feats.energy_residual_kwh, feats.duration_sec),
+            rules.check_meter_fraud(feats.energy_residual_kwh, feats.residual_rate_kwh_per_sec),
         ]
         for violation in violations:
             if not violation:

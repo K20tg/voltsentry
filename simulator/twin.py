@@ -332,6 +332,11 @@ class FleetManager:
                 s.mode = "clean"
                 s.drift_ticks = 0
                 s.is_quarantined = False
+                # Hand back a battery that can actually charge again. Without
+                # this, reset reconnects stations at whatever SoC they had
+                # reached -- usually past the 80% knee -- so the fleet lands
+                # straight back in the CV phase and `r` looks like a no-op.
+                s.battery = Battery(initial_soc=s.initial_soc, max_power_kw=120.0)
                 if loop is not None:
                     loop.create_task(s.force_reconnect())
             return ControlAck(ok=True, detail="All stations reset to clean mode")

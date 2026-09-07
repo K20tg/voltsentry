@@ -34,17 +34,25 @@ CV_TAPER_SOC = 80.0
 #
 # The rule is a *rate*, not an absolute level, because absolute level cannot
 # separate the two under-reporting attacks. meter_spoof reports a flat 5 kW
-# against a real ~120 kW, accruing 0.032 kWh/s from the first sample.
-# subtle_drift compounds -2%/tick and reaches 0.428 kWh by 40 s -- so any
-# absolute threshold low enough to catch a spoof quickly also trips drift
-# before its ML score crosses 0.65, and Tier-2's whole reason for existing
-# stops being demonstrable. By mean rate the two are far apart: drift does not
-# reach 0.02 kWh/s until ~118 s, by which point it is no longer subtle.
+# against a real ~120 kW, a constant 0.032 kWh/s. subtle_drift compounds
+# -2%/tick, so any absolute threshold low enough to catch a spoof quickly also
+# trips drift before its ML score crosses 0.65, and Tier-2 stops being
+# demonstrable.
 #
-# The floor keeps startup jitter (one slow frame early in a session) from
-# looking like a high rate over a tiny window.
+# It is the *current* rate, not the session mean. A mean over duration_sec is
+# diluted by however long the station behaved honestly beforehand: live, CP-03
+# ran clean for ~70 s then spoofed for ~40 s, giving 1.60 kWh over 110.7 s =
+# 0.0145 kWh/s, under threshold, and the attack went undetected. Under a mean,
+# the longer a station behaves before it turns, the better it hides.
+#
+# At 0.025 kWh/s a spoof (0.032) trips on its first samples, while drift's
+# ramping rate does not reach the line until ~69 s -- comfortably after its ML
+# badge at ~40 s.
+#
+# The floor keeps a single jittery frame early in a session, before any
+# meaningful residual has accumulated, from looking like fraud.
 METER_FRAUD_MIN_RESIDUAL_KWH = 0.25
-METER_FRAUD_RATE_KWH_PER_SEC = 0.02
+METER_FRAUD_RATE_KWH_PER_SEC = 0.025
 
 # Actions that are only legal inside a live session (R1).
 _SESSION_ONLY_ACTIONS = {"MeterValues", "StopTransaction"}
@@ -79,24 +87,23 @@ def check_physics(power_kw: float, soc: float) -> Optional[RuleViolation]:
 
 
 def check_meter_fraud(
-    energy_residual_kwh: float, duration_sec: float
+    energy_residual_kwh: float, residual_rate_kwh_per_sec: float
 ) -> Optional[RuleViolation]:
-    """R6 — the energy register is drifting away from the reported power.
+    """R6 — the energy register is pulling away from the reported power *now*.
 
-    Only positive residual counts: that is the station claiming less power than
-    its own meter accrued, which is the direction that under-bills. A negative
-    residual means the register lags the reports, which is not this fraud.
+    Only a positive residual climbing counts: that is the station claiming less
+    power than its own meter accrued, the direction that under-bills. A negative
+    or flat residual is not this fraud.
     """
-    if duration_sec <= 0.0 or energy_residual_kwh < METER_FRAUD_MIN_RESIDUAL_KWH:
+    if energy_residual_kwh < METER_FRAUD_MIN_RESIDUAL_KWH:
         return None
-    rate = energy_residual_kwh / duration_sec
-    if rate < METER_FRAUD_RATE_KWH_PER_SEC:
+    if residual_rate_kwh_per_sec < METER_FRAUD_RATE_KWH_PER_SEC:
         return None
     return RuleViolation(
         "R6_METER_FRAUD",
         "high",
-        f"meter under-reporting: {energy_residual_kwh:.2f} kWh unaccounted "
-        f"in {duration_sec:.0f}s ({rate * 3600:.0f} kW hidden)",
+        f"meter under-reporting: {energy_residual_kwh:.2f} kWh unaccounted, "
+        f"hiding {residual_rate_kwh_per_sec * 3600:.0f} kW",
     )
 
 

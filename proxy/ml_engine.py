@@ -51,6 +51,9 @@ class SessionFeatures:
     # register reading when the proxy started watching this session; the
     # residual is measured relative to it (see compute_session_features).
     energy_register_start_kwh: float = 0.0
+    # how fast the residual is climbing right now, kWh/s. Not part of the ML
+    # vector -- R6 reads it (rules.check_meter_fraud).
+    residual_rate_kwh_per_sec: float = 0.0
 
     def as_vector(self) -> list[float]:
         """The 5-dim vector in the frozen FEATURE_ORDER."""
@@ -69,6 +72,7 @@ def compute_session_features(
     session_start_ts: Optional[float],
     sample_count: int,
     energy_register_start_kwh: Optional[float] = None,
+    prev_energy_residual_kwh: Optional[float] = None,
 ) -> SessionFeatures:
     """Derive the feature vector for one MeterValues sample. Pure.
 
@@ -98,6 +102,14 @@ def compute_session_features(
     residual = (energy_register_kwh - anchor) - new_integral
     duration = 0.0 if session_start_ts is None else max(0.0, ts - session_start_ts)
 
+    # Current climb rate of the residual, for R6. Measured per sample rather
+    # than as residual/duration, so a station that behaves honestly and only
+    # later starts under-reporting is not hidden by its own good history.
+    if prev_energy_residual_kwh is None or dt <= 0.0:
+        residual_rate = 0.0
+    else:
+        residual_rate = (residual - prev_energy_residual_kwh) / dt
+
     return SessionFeatures(
         power_kw=power_kw,
         soc=soc,
@@ -107,6 +119,7 @@ def compute_session_features(
         energy_integral_kwh=new_integral,
         sample_count=sample_count + 1,
         energy_register_start_kwh=anchor,
+        residual_rate_kwh_per_sec=residual_rate,
     )
 
 

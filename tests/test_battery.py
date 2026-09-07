@@ -203,3 +203,67 @@ async def test_station_twin_inbound_reset():
     assert len(sent_messages) == 1
     res = json.loads(sent_messages[0])
     assert res == [3, "uuid-999", {"status": "Accepted"}]
+
+
+# --------------------------------------------- CV taper vs the R2 envelope
+# The proxy's R2 rule trips on power_kw > 60.0 while soc > 80.0 (CONTEXT.md
+# 5.B). An honest CC-CV charger must therefore be under 60 kW as soon as it is
+# past the 80% knee -- otherwise every clean station in the fleet quarantines
+# itself on a false positive the moment it crosses 80%, which is exactly what
+# the fleet was doing.
+
+def test_cv_taper_is_under_the_r2_envelope_across_the_whole_taper():
+    """Above the 80% knee an honest charger must stay under R2's 60 kW limit."""
+    for soc in (80.5, 82.0, 85.0, 88.0, 90.0, 95.0, 99.0):
+        battery = Battery(initial_soc=soc, max_power_kw=120.0)
+        assert battery.power_kw < 60.0, (
+            f"power at {soc}% SoC was {battery.power_kw:.1f} kW; R2 quarantines "
+            f"anything over 60 kW above 80% SoC"
+        )
+
+
+def test_constant_current_phase_holds_through_the_bulk_of_the_charge():
+    """The taper fix must not touch the CC phase the demo charts depend on."""
+    for soc in (10.0, 40.0, 77.9):
+        battery = Battery(initial_soc=soc, max_power_kw=120.0)
+        assert battery.power_kw == 120.0
+
+
+def test_power_falls_continuously_into_the_cv_phase():
+    """No cliff at the knee.
+
+    R2 forbids >60 kW above 80% SoC, so power must already be under 60 by the
+    time SoC crosses 80. Dropping it there in a single tick spikes dp_dt to
+    ~-62 kW/s, which the Tier-2 forest scores as an anomaly (0.81, over the
+    0.65 threshold) -- trading a Tier-1 false positive for a Tier-2 one. The
+    hand-off is eased in over the approach to the knee instead.
+    """
+    prev = 120.0
+    for tenth in range(750, 1000):
+        soc = tenth / 10.0
+        power = Battery(initial_soc=soc, max_power_kw=120.0).power_kw
+        assert power <= prev + 1e-9, f"power rose at {soc}% SoC"
+        assert prev - power < 12.0, (
+            f"power fell {prev - power:.1f} kW in 0.1% SoC at {soc}% -- that is a "
+            f"cliff, and dp_dt will read as anomalous"
+        )
+        prev = power
+
+
+def test_reset_returns_stations_to_a_low_soc_battery():
+    """`r` must hand back a fleet that can actually charge again.
+
+    Without this, reset reconnects stations at whatever SoC they had reached --
+    typically above 80% -- so they re-quarantine within seconds and the reset
+    looks like it did nothing.
+    """
+    fleet = FleetManager(base_url="ws://localhost:8000", station_count=8)
+    for s in fleet.stations.values():
+        s.battery.soc = 96.0
+        s.battery.energy_kwh = 61.0
+
+    fleet.apply_trigger(AttackTrigger(attack_type=AttackType.RESET))
+
+    for s in fleet.stations.values():
+        assert s.battery.soc < 80.0, f"{s.cpid} came back at {s.battery.soc}% SoC"
+        assert s.battery.energy_kwh == 0.0

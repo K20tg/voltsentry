@@ -44,6 +44,8 @@ class StationState:
     # Register reading when this session was first observed; the residual is
     # measured from it, so attaching mid-session does not read as fraud.
     energy_register_start_kwh: Optional[float] = None
+    # previous sample's residual, so R6 can read its current climb rate
+    last_energy_residual_kwh: Optional[float] = None
 
     # kW of the last MeterValues, kept for the fleet grid aggregate.
     last_power_reported_kw: float = 0.0
@@ -68,6 +70,7 @@ class StationState:
             session_start_ts=self.session_start_ts,
             sample_count=self.sample_count,
             energy_register_start_kwh=self.energy_register_start_kwh,
+            prev_energy_residual_kwh=self.last_energy_residual_kwh,
         )
         self.last_ts = ts
         self.last_power_kw = power_kw
@@ -75,6 +78,7 @@ class StationState:
         self.energy_integral_kwh = f.energy_integral_kwh
         self.sample_count = f.sample_count
         self.energy_register_start_kwh = f.energy_register_start_kwh
+        self.last_energy_residual_kwh = f.energy_residual_kwh
         return f
 
 
@@ -118,6 +122,7 @@ class ProxyState:
         st.energy_integral_kwh = 0.0
         st.sample_count = 0
         st.energy_register_start_kwh = None
+        st.last_energy_residual_kwh = None
 
     # ---- connection registry (R4) --------------------------------------
     def register_connection(self, cpid: str) -> bool:
