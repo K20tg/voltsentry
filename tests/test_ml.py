@@ -8,7 +8,12 @@ including the two contract corners that bite on camera:
     honest, climbing when power is under-reported (meter_spoof / drift)
 """
 
-from proxy.ml_engine import FEATURE_ORDER, compute_session_features
+from proxy.ml_engine import (
+    FEATURE_ORDER,
+    Tier2Model,
+    compute_session_features,
+    generate_baseline,
+)
 
 
 def _first(**over):
@@ -97,3 +102,50 @@ def test_integral_accumulates_across_samples():
     )
     assert f2.energy_integral_kwh > f1.energy_integral_kwh > 0.0
     assert f2.sample_count == 3  # started at 1, two more samples counted
+
+
+# ---- Tier-2 IsolationForest scorer (CONTEXT.md §5.B, plan H11) -------------
+
+
+def test_baseline_generator_shape_is_1000x5():
+    # The synthetic CC-CV baseline is 1000 vectors in the frozen 5-dim order.
+    X = generate_baseline()
+    assert X.shape == (1000, len(FEATURE_ORDER))
+
+
+def test_baseline_is_deterministic():
+    # random_state=42 is load-bearing for demo reproducibility (AGENTS.md).
+    import numpy as np
+
+    assert np.array_equal(generate_baseline(), generate_baseline())
+
+
+def test_clean_cc_vector_scores_below_0_2():
+    # A textbook constant-current sample sits deep in the baseline -> low score.
+    model = Tier2Model()
+    clean = [120.0, 45.0, 0.0, 600.0, 0.0]  # honest CC, residual ~0
+    assert model.score(clean) < 0.2
+
+
+def test_drifted_vector_scores_above_0_65():
+    # subtle_drift (CONTEXT §5.D): a −2%/tick compounding power under-report. That
+    # drifts BOTH axes off the baseline — reported power sags low-for-SoC while the
+    # energy residual climbs (the register still reflects true energy). This is the
+    # money-demo assertion (plan H13): ML fires with no rule.
+    model = Tier2Model()
+    drifted = [65.5, 30.0, -0.4, 600.0, 27.3]  # ~30 ticks into the drift
+    assert model.score(drifted) > 0.65
+
+
+def test_score_is_clipped_to_unit_interval():
+    model = Tier2Model()
+    for vec in ([120.0, 45.0, 0.0, 600.0, 0.0], [500.0, 200.0, 50.0, 9000.0, 99.0]):
+        s = model.score(vec)
+        assert 0.0 <= s <= 1.0
+
+
+def test_model_is_deterministic_across_instances():
+    # Two independently constructed models must agree (pinned seed + normaliser).
+    a, b = Tier2Model(), Tier2Model()
+    vec = [65.5, 30.0, -0.4, 600.0, 27.3]
+    assert a.score(vec) == b.score(vec)

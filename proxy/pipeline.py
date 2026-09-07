@@ -20,8 +20,16 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from shared.schemas import StationStatus, TelemetryEvent, ThreatEvent
-from proxy import ocpp, rules
+from proxy import ml_engine, ocpp, rules
 from proxy.state import ProxyState
+
+# Tier-2 behavioural model. Fitted once at import (<0.2 s, CONTEXT.md §1); the
+# pinned seed makes the score reproducible across boots. Cold start: the first
+# two samples of a session are not scored (ml_score=0.0), so a session start
+# never throws a false positive on camera (FIX-10 / BRIEF).
+ML_MODEL = ml_engine.Tier2Model()
+ML_COLD_START_SAMPLES = 2
+ML_RULE_ID = "ML_ANOMALY"
 
 # broadcast takes any feed schema model (Telemetry / Threat / Grid).
 Broadcast = Callable[[Any], Awaitable[None]]
@@ -81,8 +89,41 @@ async def raise_threat(
     await broadcast(event)
 
 
-async def _emit_telemetry(state: ProxyState, cpid: str, mv: dict, broadcast: Broadcast) -> None:
-    """Fold a MeterValues into state and broadcast a TelemetryEvent."""
+def _score_sample(feats) -> float:
+    """Tier-2 score for one sample, honouring the cold-start contract.
+
+    dp_dt is undefined on sample 1 and noisy on sample 2, so samples 1–2 score
+    0.0 (BRIEF / FIX-10). From sample 3 on, the fitted forest scores the frozen
+    5-dim vector; the residual feature is what climbs on a spoof/drift.
+    """
+    if feats.sample_count <= ML_COLD_START_SAMPLES:
+        return 0.0
+    return ML_MODEL.score(feats.as_vector())
+
+
+async def _raise_ml_threat(cpid: str, ml_score: float, raw: str, broadcast: Broadcast) -> None:
+    """Emit a throttled Tier-2 ThreatEvent (the yellow ML badge, plan H13)."""
+    if not THROTTLE.should_emit(cpid, ML_RULE_ID, time.time()):
+        return
+    event = ThreatEvent(
+        station_id=cpid,
+        ts=time.time(),
+        tier=2,
+        ml_score=round(ml_score, 3),
+        severity="medium",
+        reason=f"behavioural anomaly (ML {ml_score:.2f})",
+        action_taken="logged",
+        raw_frame=raw,
+    )
+    print(f"[proxy] THREAT {cpid} {ML_RULE_ID} (logged): ML score {ml_score:.2f}", flush=True)
+    _log_incident(event)
+    await broadcast(event)
+
+
+async def _emit_telemetry(
+    state: ProxyState, cpid: str, mv: dict, raw: str, broadcast: Broadcast
+) -> None:
+    """Fold a MeterValues into state, score it, and broadcast a TelemetryEvent."""
     station = state.station(cpid)
     feats = station.record_meter_sample(
         power_kw=mv["power_kw"],
@@ -90,6 +131,7 @@ async def _emit_telemetry(state: ProxyState, cpid: str, mv: dict, broadcast: Bro
         energy_register_kwh=mv["energy_register_kwh"],
         ts=time.time(),
     )
+    ml_score = _score_sample(feats)
     try:
         event = TelemetryEvent(
             station_id=cpid,
@@ -102,12 +144,14 @@ async def _emit_telemetry(state: ProxyState, cpid: str, mv: dict, broadcast: Bro
             energy_register_kwh=mv["energy_register_kwh"],
             energy_residual_kwh=feats.energy_residual_kwh,
             status=station.status,
-            ml_score=0.0,  # Tier-2 scoring is H11
+            ml_score=ml_score,
         )
     except Exception as exc:  # never let one bad frame kill the feed
         print(f"[proxy] {cpid} telemetry build failed: {exc}", flush=True)
         return
     await broadcast(event)
+    if ml_score > ml_engine.ML_ALERT_THRESHOLD:
+        await _raise_ml_threat(cpid, ml_score, raw, broadcast)
 
 
 async def inspect_upstream(
@@ -148,7 +192,7 @@ async def inspect_upstream(
         state.apply_authorize(cpid)
     elif action == "MeterValues":
         mv = ocpp.extract_meter_values(frame.payload or {})
-        await _emit_telemetry(state, cpid, mv, broadcast)
+        await _emit_telemetry(state, cpid, mv, raw, broadcast)
 
         quarantine_uid: Optional[str] = None
         violations = [

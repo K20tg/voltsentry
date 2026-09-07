@@ -110,13 +110,18 @@ On a forged-data rule (R2/R5) the proxy drops the frame, sends
 `ChangeAvailability{Inoperative}` downstream, and closes the socket (`4001`) on the ack.
 
 **Tier 2 — behavioural ML** (`proxy/ml_engine.py`): derives a 5-dimensional session
-feature vector `[power_kw, soc, dp_dt, duration_sec, energy_residual_kwh]` intended for
-an Isolation Forest alerting past `ml_score > 0.65`. The `energy_residual` term
-(`register − ∫ reported_power·dt`) is the drift tell.
+feature vector `[power_kw, soc, dp_dt, duration_sec, energy_residual_kwh]` and scores it
+with an `IsolationForest(n_estimators=100, contamination=0.02, random_state=42)` fitted at
+boot against a 1000-vector synthetic CC-CV baseline. Raw `decision_function` output is
+mapped through the pinned normalisation in CONTEXT.md §5.B; the proxy alerts past
+`ml_score > 0.65`. The `energy_residual` term (`register − ∫ reported_power·dt`) is the
+drift tell. The first two samples of a session score `0.0` (dp_dt cold start), so a session
+start never false-positives.
 
-> **Status note:** the feature layer runs in the live proxy today; the Isolation Forest
-> fit + scoring is the next build step, so the live path currently emits `ml_score = 0.0`
-> and the demo replays recorded scores. Copy in the UI reflects this honestly.
+Scoring runs in the live proxy: every `TelemetryEvent` carries its `ml_score`, and a
+crossing raises a Tier-2 `ThreatEvent` (the yellow ML badge). Verified end-to-end on the
+running stack — an honest fleet peaks around `0.30`, and `subtle_drift` climbs past `0.65`
+with no Tier-1 rule firing (the pinned seed makes both reproducible).
 
 Measured Tier-1 cost is **~9 µs mean per frame** (median ~8 µs, p99 < 25 µs, over 200k
 frames) — no upstream round-trip.
