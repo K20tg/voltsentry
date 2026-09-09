@@ -17,3 +17,5 @@ logs/*.jsonl
 .agents/rules/99-*.md
 CLAUDE.local.md
 .antigravity/
+*.zip
+*.patch
