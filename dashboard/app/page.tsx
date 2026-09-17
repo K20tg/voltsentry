@@ -5,9 +5,9 @@ import dynamic from "next/dynamic";
 import { useFeed } from "../lib/useFeed";
 import { useAudioAlert } from "../lib/useAudioAlert";
 import { useVoiceAlert } from "../lib/useVoiceAlert";
-import { StationStatus, TelemetryEvent, ThreatEvent } from "../lib/types";
+import { GridEvent, StationStatus, TelemetryEvent, ThreatEvent } from "../lib/types";
+import { useGridFrequency } from "../lib/useGridFrequency";
 import { WaveBackground } from "../components/WaveBackground";
-import { AmbientVideo } from "../components/AmbientVideo";
 import { PowerChart } from "../components/PowerChart";
 import { TransformerGauge } from "../components/TransformerGauge";
 import { ThreatBadge } from "../components/ThreatBadge";
@@ -20,7 +20,7 @@ import { SettingsView } from "../components/SettingsView";
 import {
   Icon3DShield,
 } from "../components/3dIcons";
-import { Play, Volume2, Radio, Zap, Download, ShieldAlert, User, Settings, LayoutDashboard, Globe, Box, Loader2, LogOut } from "lucide-react";
+import { Play, Volume2, Radio, Zap, Download, ShieldAlert, User, Settings, LayoutDashboard, Globe, Box, Loader2, LogOut, Network, Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { RequireAuth, useAuth } from "../context/AuthContext";
 
@@ -41,8 +41,34 @@ const ChargingTwin3D = dynamic(() => import("../components/ChargingTwin3D"), {
   ),
 });
 
+/**
+ * The landing hero is procedural WebGL; same SSR rule as the twin above.
+ * It replaces the old video hero, so the landing page ships no media files.
+ */
+const InteractiveHero3D = dynamic(() => import("../components/InteractiveHero3D"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[86vh] min-h-[560px] w-full flex-col items-center justify-center space-y-3 rounded-2xl border border-volt-line bg-volt-bg">
+      <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      <span className="font-mono text-xs tracking-wider text-slate-400">
+        SPINNING UP REACTOR CORE...
+      </span>
+    </div>
+  ),
+});
+
+/** Topology is plain SVG, but it is heavy enough to keep out of the first load. */
+const NetworkTopology = dynamic(() => import("../components/NetworkTopology"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[560px] w-full items-center justify-center rounded-2xl border border-volt-line bg-volt-bg">
+      <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+    </div>
+  ),
+});
+
 type ViewState = "landing" | "noc" | "account" | "settings";
-type NocTab = "all" | "grid" | "fleet" | "twin3d" | "threats";
+type NocTab = "all" | "grid" | "fleet" | "twin3d" | "topology" | "threats";
 
 const ALL_STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
 
@@ -125,9 +151,6 @@ export default function App() {
       {/* Dynamic 3D Kexsio Wave Canvas Background (Fixed at 0.65 Opacity) */}
       <WaveBackground opacity={0.65} />
 
-      {/* Two-phase landing video: full-screen intro splash + persistent ambient loop */}
-      <AmbientVideo />
-
       {/* Loading Screen Overlay */}
       {isLoading && <LoadingScreen message={loadingMessage} />}
 
@@ -202,6 +225,8 @@ export default function App() {
 
           {/* Right Action Items — logged-in Operator widget */}
           <div className="flex items-center space-x-2 font-mono text-xs">
+            {/* Substation frequency — modelled from measured transformer load. */}
+            <GridFrequencyWidget grid={grid} />
             <button
               onClick={() => navigateTo("account")}
               className="flex items-center gap-2 rounded-xl border border-volt-green/40 bg-volt-green/15 px-3 py-1.5 text-volt-green transition-colors hover:bg-volt-green/25"
@@ -229,10 +254,23 @@ export default function App() {
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1">
         {/* VIEW 1: LANDING PAGE */}
         {currentView === "landing" && (
-          <StoryLanding
-            onLaunchNoc={() => navigateTo("noc", "Opening NOC Console...")}
-            onOpenLogin={() => setIsLoginOpen(true)}
-          />
+          <>
+            {/* Procedural WebGL hero — replaces the old video splash. */}
+            <div className="pt-5">
+              <InteractiveHero3D
+                onLaunchNoc={() => navigateTo("noc", "Opening NOC Console...")}
+                onOpenTopology={() => {
+                  setNocTab("topology");
+                  navigateTo("noc", "Rendering Fleet Network Topology...");
+                }}
+              />
+            </div>
+
+            <StoryLanding
+              onLaunchNoc={() => navigateTo("noc", "Opening NOC Console...")}
+              onOpenLogin={() => setIsLoginOpen(true)}
+            />
+          </>
         )}
 
         {/* VIEW 2: ACCOUNT PROFILE */}
@@ -379,6 +417,18 @@ export default function App() {
                 </button>
 
                 <button
+                  onClick={() => setNocTab("topology")}
+                  className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
+                    nocTab === "topology"
+                      ? "bg-volt-elevated text-slate-100 border border-volt-line-strong"
+                      : "text-slate-400 hover:text-white bg-black/40 border border-transparent"
+                  }`}
+                >
+                  <Network className="w-4 h-4" />
+                  <span>NETWORK TOPOLOGY</span>
+                </button>
+
+                <button
                   onClick={() => setNocTab("threats")}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-2 font-bold ${
                     nocTab === "threats"
@@ -424,6 +474,28 @@ export default function App() {
                 </div>
 
                 <ChargingTwin3D stations={stations} threats={threats} stationIds={ALL_STATIONS} />
+              </div>
+            )}
+
+            {/* Dynamic fleet network topology — scalable node graph + red-team drawer. */}
+            {nocTab === "topology" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pt-2">
+                  <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
+                    <Network className="w-5 h-5 text-slate-400" />
+                    <span>Fleet Network Topology</span>
+                  </h2>
+                  <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
+                    Live fleet: <span className="text-slate-300 font-medium">{ALL_STATIONS.length} stations</span>
+                  </div>
+                </div>
+
+                <NetworkTopology
+                  stations={stations}
+                  threats={threats}
+                  grid={grid}
+                  liveStationIds={ALL_STATIONS}
+                />
               </div>
             )}
 
@@ -614,5 +686,43 @@ export default function App() {
       <Footer />
     </div>
     </RequireAuth>
+  );
+}
+
+/**
+ * Substation grid frequency ticker for the navbar.
+ *
+ * The backend publishes load, not frequency, so this is MODELLED from the
+ * measured transformer headroom (see lib/useGridFrequency.ts) and labelled as
+ * such — it is not a measured PMU reading.
+ */
+function GridFrequencyWidget({ grid }: { grid: GridEvent | null }) {
+  const { hz, deviation, strained } = useGridFrequency(grid);
+
+  return (
+    <div
+      className="hidden items-center gap-2 rounded-xl border border-volt-line bg-black/50 px-3 py-1.5 lg:flex"
+      title="Substation frequency — modelled from measured transformer load, not a PMU reading"
+    >
+      <Activity
+        className={`h-3.5 w-3.5 ${strained ? "text-state-warn" : "text-state-healthy"}`}
+      />
+      <div className="leading-none">
+        <div className="flex items-baseline gap-1">
+          <span
+            className={`font-mono text-xs font-bold tabular-nums ${
+              strained ? "text-amber-300" : "text-emerald-300"
+            }`}
+          >
+            {hz.toFixed(2)}
+          </span>
+          <span className="font-mono text-[9px] text-volt-muted">Hz</span>
+        </div>
+        <div className="mt-0.5 font-mono text-[8px] uppercase tracking-wider text-volt-muted">
+          {deviation >= 0 ? "+" : ""}
+          {deviation.toFixed(3)} · modelled
+        </div>
+      </div>
+    </div>
   );
 }

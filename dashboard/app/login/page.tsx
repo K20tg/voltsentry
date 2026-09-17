@@ -1,9 +1,35 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+/**
+ * VoltSentry security gate.
+ *
+ * Still the same DEMO gate as before — see context/AuthContext.tsx. No
+ * credentials are transmitted or verified; the validation below is shape-only
+ * so the form behaves like the real thing on stage.
+ *
+ * The chrome around it is a robotic SCADA badge reader: a holographic scanner
+ * that sweeps on hover/focus, procedural Web Audio cues (no media files), and
+ * clearance HUD badges.
+ */
+
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, IdCard, Mail, ArrowRight, Zap } from "lucide-react";
+import {
+  ShieldCheck,
+  ShieldAlert,
+  IdCard,
+  Mail,
+  ArrowRight,
+  Zap,
+  Fingerprint,
+  Lock,
+  Cpu,
+  ScanLine,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useAuth, type Operator } from "../../context/AuthContext";
+import { useSecurityAudio } from "../../lib/useSecurityAudio";
 
 type Mode = "signin" | "register";
 
@@ -17,6 +43,9 @@ const DEMO_OPERATOR: Operator = {
   email: "operator@voltsentry.io",
 };
 
+/** How long the "ACCESS GRANTED" state holds so the chime lands before nav. */
+const GRANT_DWELL_MS = 620;
+
 function deriveName(employeeId: string): string {
   return `Operator ${employeeId.toUpperCase()}`;
 }
@@ -24,6 +53,7 @@ function deriveName(employeeId: string): string {
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated, hydrated } = useAuth();
+  const { playChirp, setMuted } = useSecurityAudio();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [name, setName] = useState("");
@@ -31,37 +61,97 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [granted, setGranted] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const [audioOn, setAudioOn] = useState(true);
+
+  const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const denyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Already authenticated → straight to the NOC.
   useEffect(() => {
     if (hydrated && isAuthenticated) router.replace("/");
   }, [hydrated, isAuthenticated, router]);
 
+  useEffect(() => {
+    return () => {
+      if (scanTimer.current) clearTimeout(scanTimer.current);
+      if (navTimer.current) clearTimeout(navTimer.current);
+      if (denyTimer.current) clearTimeout(denyTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    setMuted(!audioOn);
+  }, [audioOn, setMuted]);
+
   const idValid = EMPLOYEE_ID_RE.test(employeeId.trim());
   const emailValid = EMAIL_RE.test(email.trim());
   const nameValid = mode === "signin" || name.trim().length >= 2;
   const formValid = idValid && emailValid && nameValid;
 
-  const idError = touched && employeeId && !idValid
+  // Empty-but-required must report too: the submit button stays enabled so a
+  // rejected attempt can fire the deny cue, which means the form owes the
+  // operator a visible reason as well as the buzz.
+  const idError = !touched
+    ? ""
+    : !employeeId.trim()
+    ? "Employee ID is required."
+    : !idValid
     ? "Use a 4+ digit ID, optionally prefixed (e.g. EMP-8820)."
     : "";
-  const emailError = touched && email && !emailValid
+  const emailError = !touched
+    ? ""
+    : !email.trim()
+    ? "Corporate email is required."
+    : !emailValid
     ? "Enter a valid corporate email address."
     : "";
-  const nameError = touched && mode === "register" && name && !nameValid
-    ? "Operator name is required."
-    : "";
+  const nameError =
+    !touched || mode !== "register"
+      ? ""
+      : !name.trim()
+      ? "Operator name is required."
+      : !nameValid
+      ? "Operator name must be at least 2 characters."
+      : "";
+
+  /** Focusing a field fires the badge reader: beep + laser sweep. */
+  const handleFieldFocus = () => {
+    playChirp("scan");
+    setScanning(true);
+    if (scanTimer.current) clearTimeout(scanTimer.current);
+    scanTimer.current = setTimeout(() => setScanning(false), 1700);
+  };
 
   const authenticate = (op: Operator) => {
     setSubmitting(true);
-    login(op);
-    router.replace("/");
+    setDenied(false);
+    setGranted(true);
+    playChirp("grant");
+    // Hold the granted state briefly so the chime and the HUD flip are seen.
+    navTimer.current = setTimeout(() => {
+      login(op);
+      router.replace("/");
+    }, GRANT_DWELL_MS);
+  };
+
+  const reject = () => {
+    playChirp("deny");
+    setDenied(true);
+    if (denyTimer.current) clearTimeout(denyTimer.current);
+    denyTimer.current = setTimeout(() => setDenied(false), 2600);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (!formValid) return;
+    if (!formValid) {
+      reject();
+      return;
+    }
     authenticate({
       name: mode === "register" ? name.trim() : deriveName(employeeId.trim()),
       employeeId: employeeId.trim().toUpperCase(),
@@ -75,50 +165,143 @@ export default function LoginPage() {
   const cta = mode === "signin" ? "Authenticate" : "Create Operator";
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-volt-bg text-volt-text font-sans flex items-center justify-center px-4 py-10">
+    <main className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-volt-bg px-4 py-10 font-sans text-volt-text">
       {/* Ambient neon field */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-70"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(15,255,80,0.12), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(15,255,80,0.08), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(16,185,129,0.14), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(34,211,238,0.10), transparent 70%)",
         }}
       />
+      {/* Micro-grid */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.05]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(15,255,80,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(15,255,80,0.6) 1px, transparent 1px)",
-          backgroundSize: "44px 44px",
-        }}
+        className="pointer-events-none absolute inset-0 bg-dot-grid-green bg-dot-grid opacity-40"
       />
 
       <div className="relative w-full max-w-md">
-        {/* Glowing gate badge */}
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="relative mb-3">
-            <div className="absolute inset-0 rounded-3xl bg-volt-green/25 blur-2xl" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/voltsentry-logo.png"
-              alt="VoltSentry"
-              className="relative w-44 max-w-full drop-shadow-[0_0_18px_rgba(15,255,80,0.25)]"
-            />
+        {/* Audio toggle — reviewers on a quiet machine can kill the cues. */}
+        <button
+          type="button"
+          onClick={() => setAudioOn((v) => !v)}
+          className="mb-2 ml-auto flex items-center gap-1.5 rounded-lg border border-volt-line bg-black/50 px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-volt-muted transition-colors hover:text-volt-green"
+          title={audioOn ? "Mute gate audio" : "Unmute gate audio"}
+          aria-pressed={audioOn}
+        >
+          {audioOn ? (
+            <Volume2 className="h-3.5 w-3.5" />
+          ) : (
+            <VolumeX className="h-3.5 w-3.5" />
+          )}
+          {audioOn ? "SFX On" : "SFX Off"}
+        </button>
+
+        {/* ── Holographic badge scanner ── */}
+        <div
+          className="group relative mb-6 overflow-hidden rounded-2xl glass-panel-futuristic p-4 scanlines"
+          onMouseEnter={handleFieldFocus}
+          tabIndex={0}
+          onFocus={handleFieldFocus}
+          role="img"
+          aria-label="Operator badge scanner"
+        >
+          {/* Laser sweep — runs on hover, focus, or while a field is active. */}
+          <div
+            aria-hidden
+            className={`laser-beam ${
+              scanning
+                ? "animate-laser-sweep"
+                : "opacity-0 group-hover:animate-laser-sweep group-hover:opacity-100"
+            }`}
+          />
+
+          <div className="relative flex items-center gap-4">
+            <div className="relative shrink-0">
+              <div className="absolute inset-0 rounded-xl bg-volt-green/25 blur-xl" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/voltsentry-mark.png"
+                alt="VoltSentry"
+                className="relative h-14 w-14 rounded-xl border border-volt-green/30"
+              />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-volt-green">
+                <Fingerprint className="h-3 w-3" />
+                <span>Operator Badge</span>
+              </div>
+              <div className="mt-1 truncate font-display text-lg font-black tracking-tight text-white">
+                {granted
+                  ? "ACCESS GRANTED"
+                  : denied
+                  ? "ACCESS DENIED"
+                  : employeeId.trim()
+                  ? employeeId.trim().toUpperCase()
+                  : "AWAITING CREDENTIAL"}
+              </div>
+              <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-volt-muted">
+                <ScanLine className="h-3 w-3" />
+                <span>
+                  {granted
+                    ? "Gate open — routing to NOC"
+                    : denied
+                    ? "Credential rejected — check fields below"
+                    : scanning
+                    ? "Scanning credential…"
+                    : "Present badge to reader"}
+                </span>
+              </div>
+            </div>
+
+            {/* Live status lamp */}
+            <div className="shrink-0">
+              <span className="relative flex h-2.5 w-2.5">
+                <span
+                  className={`absolute inline-flex h-full w-full rounded-full ${
+                    granted ? "bg-volt-green" : denied ? "bg-state-critical" : "bg-state-active"
+                  } animate-radar-ping`}
+                />
+                <span
+                  className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                    granted ? "bg-volt-green" : denied ? "bg-state-critical" : "bg-state-active"
+                  }`}
+                />
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-volt-green">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Security Gate</span>
-          </div>
-          <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-volt-muted">
-            Restricted — NOC personnel only
-          </p>
-          <div className="mt-4 h-px w-40 flow-line animate-volt-pulse-line" />
         </div>
 
-        {/* Card */}
-        <div className="rounded-3xl glass-panel-dense p-6 sm:p-7 shadow-2xl">
+        {/* ── Clearance HUD badges ── */}
+        <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <ClearanceBadge
+            icon={<ShieldCheck className="h-3 w-3" />}
+            label="Clearance"
+            value="Level 4"
+            sub="Infra Guardian"
+          />
+          <ClearanceBadge
+            icon={<Lock className="h-3 w-3" />}
+            label="Cipher"
+            value="AES-256"
+            sub="GCM"
+          />
+          <ClearanceBadge
+            icon={<Cpu className="h-3 w-3" />}
+            label="ML Engine"
+            value="Armed"
+            sub="Isolation Forest"
+          />
+        </div>
+
+        {/* ── Gate card ── */}
+        <div
+          className={`rounded-3xl glass-panel-dense p-6 shadow-2xl transition-shadow sm:p-7 ${
+            granted ? "animate-electric-glow" : ""
+          }`}
+        >
           {/* Mode toggle */}
           <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-volt-line bg-black/40 p-1 font-mono text-[11px] font-bold uppercase tracking-wider">
             {(["signin", "register"] as Mode[]).map((m) => (
@@ -128,6 +311,7 @@ export default function LoginPage() {
                 onClick={() => {
                   setMode(m);
                   setTouched(false);
+                  playChirp("scan");
                 }}
                 className={`rounded-lg py-2 transition-colors ${
                   mode === m
@@ -144,6 +328,18 @@ export default function LoginPage() {
             {heading}
           </h1>
 
+          {denied && (
+            <div
+              role="alert"
+              className="mb-4 flex items-start gap-2 rounded-xl border border-state-critical/40 bg-state-critical/10 p-3"
+            >
+              <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0 text-rose-400" />
+              <span className="font-mono text-[10px] leading-relaxed text-rose-300">
+                Credential rejected — resolve the highlighted fields and retry.
+              </span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {mode === "register" && (
               <Field
@@ -155,6 +351,7 @@ export default function LoginPage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  onFocus={handleFieldFocus}
                   onBlur={() => setTouched(true)}
                   placeholder="e.g. Ava Chen"
                   className={inputCls(!!nameError)}
@@ -172,6 +369,7 @@ export default function LoginPage() {
                 type="text"
                 value={employeeId}
                 onChange={(e) => setEmployeeId(e.target.value)}
+                onFocus={handleFieldFocus}
                 onBlur={() => setTouched(true)}
                 placeholder="EMP-8820"
                 className={inputCls(!!idError)}
@@ -189,6 +387,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onFocus={handleFieldFocus}
                 onBlur={() => setTouched(true)}
                 placeholder="operator@voltsentry.io"
                 className={inputCls(!!emailError)}
@@ -198,10 +397,10 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={submitting || (touched && !formValid)}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-volt-green py-3.5 font-mono text-sm font-extrabold uppercase tracking-wider text-slate-950 transition-all hover:bg-volt-green-dim disabled:opacity-50"
+              disabled={submitting}
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-volt-green py-3.5 font-mono text-sm font-extrabold uppercase tracking-wider text-slate-950 transition-all hover:bg-[#05FFA1] hover:shadow-[0_0_26px_-6px_rgba(5,255,161,0.75)] active:scale-[0.99] disabled:opacity-50"
             >
-              {submitting ? "Verifying…" : cta}
+              {granted ? "Access Granted" : submitting ? "Verifying…" : cta}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
           </form>
@@ -216,7 +415,7 @@ export default function LoginPage() {
             type="button"
             onClick={quickLogin}
             disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-volt-green/40 bg-volt-green/10 py-3 font-mono text-xs font-bold uppercase tracking-wider text-volt-green transition-all hover:bg-volt-green/20 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-volt-green/40 bg-volt-green/10 py-3 font-mono text-xs font-bold uppercase tracking-wider text-volt-green transition-all hover:bg-volt-green/20 active:scale-[0.99] disabled:opacity-50"
           >
             <Zap className="h-4 w-4" />
             Demo Quick-Login
@@ -234,11 +433,36 @@ export default function LoginPage() {
 function inputCls(hasError: boolean): string {
   return [
     "w-full rounded-xl border bg-black/50 px-3.5 py-3 font-mono text-sm text-white placeholder-volt-muted/60",
-    "focus:outline-none focus:ring-1",
+    "transition-shadow focus:outline-none focus:ring-2",
     hasError
       ? "border-rose-500/60 focus:border-rose-400 focus:ring-rose-400/40"
-      : "border-volt-line focus:border-volt-green focus:ring-volt-green/40",
+      : "border-volt-line focus:border-volt-green focus:ring-volt-green/45 focus:shadow-[0_0_22px_-8px_rgba(16,185,129,0.9)]",
   ].join(" ");
+}
+
+function ClearanceBadge({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="glass-panel-futuristic rounded-xl px-3 py-2">
+      <div className="flex items-center gap-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-volt-muted">
+        <span className="text-volt-green">{icon}</span>
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="mt-0.5 font-mono text-xs font-bold text-white">{value}</div>
+      <div className="truncate font-mono text-[9px] uppercase tracking-wider text-volt-muted/70">
+        {sub}
+      </div>
+    </div>
+  );
 }
 
 function Field({
