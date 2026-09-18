@@ -181,7 +181,86 @@ export default function LoginPage() {
         className="pointer-events-none absolute inset-0 bg-dot-grid-green bg-dot-grid opacity-40"
       />
 
-      <div className="relative w-full max-w-md">
+      <div className="relative grid w-full max-w-5xl grid-cols-1 items-center gap-8 lg:grid-cols-[1.05fr_minmax(0,26rem)]">
+        {/* ── Left: visual command deck (desktop only; the badge scanner is the
+             compact header on mobile) ── */}
+        <aside className="hidden flex-col gap-6 lg:flex">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-2xl bg-volt-green/25 blur-2xl" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/voltsentry-logo.png"
+                alt="VoltSentry"
+                className="relative w-52 max-w-full drop-shadow-[0_0_18px_rgba(16,185,129,0.25)]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <h2 className="font-display text-3xl font-black leading-tight tracking-tight text-white">
+              Grid Command
+              <br />
+              <span className="bg-gradient-to-r from-[#00F0FF] to-[#00FF66] bg-clip-text text-transparent">
+                Access Terminal
+              </span>
+            </h2>
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-volt-muted">
+              Authenticate to open the VoltSentry NOC — live OCPP inspection, the
+              cyber-physical twin, and the fleet threat console.
+            </p>
+          </div>
+
+          {/* Clearance ladder */}
+          <div className="space-y-2">
+            {[
+              { role: "OPERATOR", desc: "Monitor & acknowledge", on: true },
+              { role: "DEFENSE_ADMIN", desc: "Quarantine & de-rate", on: false },
+              { role: "RED_TEAM", desc: "Attack injection", on: false },
+            ].map((r) => (
+              <div
+                key={r.role}
+                className="flex items-center justify-between rounded-xl border border-volt-line bg-black/40 px-3.5 py-2.5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      r.on ? "bg-volt-green animate-pulse" : "bg-volt-muted/50"
+                    }`}
+                  />
+                  <span className="font-mono text-xs font-bold tracking-wider text-volt-text">
+                    {r.role}
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-volt-muted">
+                  {r.desc}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Integrity stats */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-volt-green/25 bg-volt-green/[0.06] px-3 py-2.5">
+              <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-volt-green">
+                <Lock className="h-3 w-3" /> Encryption
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-volt-text">OCPP 1.6-J · active</div>
+            </div>
+            <div className="rounded-xl border border-state-active/25 bg-state-active/[0.06] px-3 py-2.5">
+              <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-state-active">
+                <ShieldCheck className="h-3 w-3" /> Protocol
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-volt-text">Zero-trust · localhost</div>
+            </div>
+          </div>
+
+          {/* Thin animated grid line */}
+          <div className="h-px w-full flow-line animate-volt-pulse-line" />
+        </aside>
+
+        {/* ── Right: access gate ── */}
+        <div className="relative w-full">
         {/* Audio toggle — reviewers on a quiet machine can kill the cues. */}
         <button
           type="button"
@@ -424,6 +503,7 @@ export default function LoginPage() {
           <p className="mt-4 text-center font-mono text-[10px] leading-relaxed text-volt-muted">
             Localhost demo gate — no credentials are transmitted or verified.
           </p>
+        </div>
         </div>
       </div>
     </main>

@@ -7,6 +7,7 @@ import { useAudioAlert } from "../lib/useAudioAlert";
 import { useVoiceAlert } from "../lib/useVoiceAlert";
 import { GridEvent, StationStatus, TelemetryEvent, ThreatEvent } from "../lib/types";
 import { useGridFrequency } from "../lib/useGridFrequency";
+import { useSyntheticFleet } from "../lib/useSyntheticFleet";
 import { WaveBackground } from "../components/WaveBackground";
 import { PowerChart } from "../components/PowerChart";
 import { TransformerGauge } from "../components/TransformerGauge";
@@ -20,7 +21,7 @@ import { SettingsView } from "../components/SettingsView";
 import {
   Icon3DShield,
 } from "../components/3dIcons";
-import { Play, Volume2, Radio, Zap, Download, ShieldAlert, User, Settings, LayoutDashboard, Globe, Box, Loader2, LogOut, Network, Activity } from "lucide-react";
+import { Play, Volume2, Radio, Zap, Download, ShieldAlert, User, Settings, LayoutDashboard, Globe, Box, Loader2, LogOut, Network, Activity, Layers, Minus, Plus, Gauge, Cpu } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { RequireAuth, useAuth } from "../context/AuthContext";
 
@@ -70,7 +71,12 @@ const NetworkTopology = dynamic(() => import("../components/NetworkTopology"), {
 type ViewState = "landing" | "noc" | "account" | "settings";
 type NocTab = "all" | "grid" | "fleet" | "twin3d" | "topology" | "threats";
 
-const ALL_STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
+// The stations the twin actually runs a live socket for.
+const LIVE_STATIONS = ["CP-01", "CP-02", "CP-03", "CP-04", "CP-05", "CP-06", "CP-07", "CP-08"];
+const ALL_STATIONS = LIVE_STATIONS; // kept for topology's live-fleet prop
+const FLEET_PRESETS = [8, 16, 24, 32] as const;
+const FLEET_MIN = 4;
+const FLEET_MAX = 48;
 
 function getStatusBadgeStyle(status: StationStatus | undefined) {
   switch (status) {
@@ -124,6 +130,24 @@ export default function App() {
     source: "fixture",
     onThreat: handleThreat,
   });
+
+  // Fleet-size configurator. Live stations pass through; anything above the live
+  // count is synthesised and badged SIM (see useSyntheticFleet).
+  const [stationCount, setStationCount] = useState(LIVE_STATIONS.length);
+  const fleet = useSyntheticFleet(stations, LIVE_STATIONS, stationCount);
+
+  // Effective substation envelope across the whole (live + sim) fleet.
+  const fleetAgg = React.useMemo(() => {
+    let kw = 0;
+    let active = 0;
+    for (const id of fleet.stationIds) {
+      const t = fleet.stations[id];
+      if (!t) continue;
+      kw += t.power_kw;
+      if (t.status === "Charging" || t.status === "Finishing") active += 1;
+    }
+    return { kw, active };
+  }, [fleet]);
 
   const navigateTo = (view: ViewState, msg = "Loading Proxy View...") => {
     setLoadingMessage(msg);
@@ -365,6 +389,12 @@ export default function App() {
               </div>
             </header>
 
+            {/* SCADA telemetry strip — grid frequency, phase voltage, load
+                factor, packet ingress, and a live grid-readiness badge. */}
+            <div className="rounded-2xl glass-panel-dense p-3">
+              <ScadaHeaderStrip grid={grid} threats={threats} isConnected={isConnected} />
+            </div>
+
             {/* NOC Sub-Navigation Menu Bar for Clean Admin Focus */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 p-2 rounded-2xl border border-white/10 text-xs font-mono shadow-lg">
               <div className="flex flex-wrap items-center gap-2">
@@ -401,7 +431,7 @@ export default function App() {
                   }`}
                 >
                   <Radio className="w-4 h-4" />
-                  <span>2D FLEET GRID ({ALL_STATIONS.length})</span>
+                  <span>2D FLEET GRID ({stationCount})</span>
                 </button>
 
                 <button
@@ -451,7 +481,12 @@ export default function App() {
             {(nocTab === "all" || nocTab === "grid") && (
               <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 <div className="lg:col-span-1">
-                  <TransformerGauge grid={grid} />
+                  <TransformerGauge
+                    grid={grid}
+                    fleetSize={fleet.hasSim ? stationCount : undefined}
+                    aggregateKw={fleet.hasSim ? fleetAgg.kw : undefined}
+                    activeCount={fleet.hasSim ? fleetAgg.active : undefined}
+                  />
                 </div>
                 <div className="lg:col-span-2">
                   <PowerChart data={powerHistory} />
@@ -463,17 +498,20 @@ export default function App() {
                 never pays the WebGL cost, and unmounts cleanly when you leave. */}
             {nocTab === "twin3d" && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-2">
                   <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
                     <Box className="w-5 h-5 text-slate-400" />
-                    <span>Charging Bay Digital Twin ({ALL_STATIONS.length} Bays)</span>
+                    <span>Charging Bay Digital Twin ({stationCount} Bays)</span>
                   </h2>
-                  <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
-                    Rendering: <span className="text-slate-300 font-medium">live telemetry</span>
-                  </div>
+                  <FleetConfigurator count={stationCount} setCount={setStationCount} />
                 </div>
 
-                <ChargingTwin3D stations={stations} threats={threats} stationIds={ALL_STATIONS} />
+                <ChargingTwin3D
+                  stations={fleet.stations}
+                  threats={threats}
+                  stationIds={fleet.stationIds}
+                  simIds={fleet.simIds}
+                />
               </div>
             )}
 
@@ -502,19 +540,18 @@ export default function App() {
             {/* Fleet Section Header & 8-Station Grid */}
             {(nocTab === "all" || nocTab === "fleet") && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-2">
                   <h2 className="text-xl font-black text-slate-100 flex items-center space-x-3">
                     <Zap className="w-5 h-5 text-slate-400" />
-                    <span>Charger Fleet Overview ({ALL_STATIONS.length} Stations)</span>
+                    <span>Charger Fleet Overview ({stationCount} Stations)</span>
                   </h2>
-                  <div className="text-xs font-mono text-slate-300 bg-black/60 px-3 py-1 rounded-lg border border-white/15">
-                    Risk Index threshold: <span className="text-amber-300 font-medium">0.65</span>
-                  </div>
+                  <FleetConfigurator count={stationCount} setCount={setStationCount} />
                 </div>
 
                 <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {ALL_STATIONS.map((stationId) => {
-                    const telemetry: TelemetryEvent | undefined = stations[stationId];
+                  {fleet.stationIds.map((stationId) => {
+                    const telemetry: TelemetryEvent | undefined = fleet.stations[stationId];
+                    const isSim = fleet.simIds.has(stationId);
                     const isQuarantined = telemetry?.status === "Quarantined";
                     const isMlAnomaly = (telemetry?.ml_score ?? 0) > 0.65;
                     const stationThreat = threats.find((t) => t.station_id === stationId);
@@ -554,6 +591,11 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
                             <span className="font-mono font-semibold text-sm text-slate-100">{stationId}</span>
+                            {isSim && (
+                              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-amber-300">
+                                SIM
+                              </span>
+                            )}
                           </div>
                           <span
                             className={`text-[10px] px-1.5 py-0.5 rounded border font-medium tracking-wide ${getStatusBadgeStyle(
@@ -696,6 +738,168 @@ export default function App() {
  * measured transformer headroom (see lib/useGridFrequency.ts) and labelled as
  * such — it is not a measured PMU reading.
  */
+/**
+ * Fleet dimension configurator — preset pills + a numeric stepper. Stations
+ * above the live backend count are synthesised and badged SIM downstream.
+ */
+function FleetConfigurator({
+  count,
+  setCount,
+}: {
+  count: number;
+  setCount: (n: number) => void;
+}) {
+  const clamp = (n: number) => Math.max(FLEET_MIN, Math.min(FLEET_MAX, n));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-volt-muted">
+        <Layers className="h-3.5 w-3.5 text-volt-green" />
+        Fleet size
+      </span>
+      <div className="flex items-center gap-1 rounded-xl border border-volt-line bg-black/50 p-1">
+        {FLEET_PRESETS.map((p) => (
+          <button
+            key={p}
+            onClick={() => setCount(p)}
+            className={`min-w-[34px] rounded-lg px-2 py-1.5 font-mono text-xs font-bold transition-all ${
+              count === p ? "bg-volt-green text-slate-950" : "text-volt-muted hover:text-white"
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-1 rounded-xl border border-volt-line bg-black/50 p-1">
+        <button
+          onClick={() => setCount(clamp(count - 1))}
+          className="rounded-lg p-1.5 text-volt-muted transition-colors hover:text-white disabled:opacity-40"
+          disabled={count <= FLEET_MIN}
+          aria-label="Remove a bay"
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </button>
+        <span className="min-w-[28px] text-center font-mono text-sm font-bold tabular-nums text-white">
+          {count}
+        </span>
+        <button
+          onClick={() => setCount(clamp(count + 1))}
+          className="rounded-lg p-1.5 text-volt-muted transition-colors hover:text-white disabled:opacity-40"
+          disabled={count >= FLEET_MAX}
+          aria-label="Add a bay"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <span className="font-mono text-[9px] uppercase tracking-wider text-volt-muted/70">
+        {FLEET_MIN}–{FLEET_MAX} bays
+      </span>
+    </div>
+  );
+}
+
+/**
+ * SCADA telemetry strip for the NOC header. Grid frequency is modelled (see
+ * useGridFrequency); phase voltage and packet-ingress rate are DERIVED for
+ * presentation from the same measured load signal — they are not independent
+ * measurements, and are labelled accordingly.
+ */
+function ScadaHeaderStrip({
+  grid,
+  threats,
+  isConnected,
+}: {
+  grid: GridEvent | null;
+  threats: ThreatEvent[];
+  isConnected: boolean;
+}) {
+  const { hz, deviation, strained } = useGridFrequency(grid);
+  // Phase voltage droops with load, same envelope idea as frequency. Nominal
+  // 400 V line-to-line, ± ~0.6 V. Modelled, not measured.
+  const headroom = grid?.headroom_pct ?? 100;
+  const voltage = 400 - ((100 - headroom) / 100) * 0.8 + (Math.random() - 0.5) * 0.15;
+  const loadPct = grid ? Math.min(100, (grid.total_load_kw / grid.transformer_capacity_kva) * 100) : 0;
+  // Packet ingress ~ one MeterValues per active station per second, jittered.
+  const pps = Math.round((grid?.active_stations ?? 0) * 1.0 + Math.random() * 3);
+
+  // DEFCON-style readiness from live threat pressure.
+  const recentCritical = threats.some(
+    (t) => t.action_taken === "quarantined" || t.tier === 1
+  );
+  const anyThreat = threats.length > 0;
+  const readiness = recentCritical
+    ? { label: "THREAT — LEVEL 3", cls: "border-rose-500/50 bg-rose-500/15 text-rose-300", dot: "bg-rose-400" }
+    : anyThreat
+    ? { label: "ELEVATED — LEVEL 2", cls: "border-amber-500/50 bg-amber-500/15 text-amber-300", dot: "bg-amber-400" }
+    : { label: "SECURE — LEVEL 1", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300", dot: "bg-emerald-400" };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
+      <ScadaCell
+        icon={<Activity className="h-3 w-3" />}
+        label="Grid Freq"
+        value={`${hz.toFixed(2)} Hz`}
+        sub={`${deviation >= 0 ? "+" : ""}${deviation.toFixed(3)} · modelled`}
+        tone={strained ? "warn" : "ok"}
+      />
+      <ScadaCell
+        icon={<Zap className="h-3 w-3" />}
+        label="Phase V"
+        value={`${voltage.toFixed(1)} V`}
+        sub="L-L · modelled"
+        tone="ok"
+      />
+      <ScadaCell
+        icon={<Gauge className="h-3 w-3" />}
+        label="Load Factor"
+        value={`${loadPct.toFixed(0)}%`}
+        sub="substation"
+        tone={loadPct > 85 ? "warn" : "ok"}
+      />
+      <ScadaCell
+        icon={<Cpu className="h-3 w-3" />}
+        label="Ingress"
+        value={`${pps} pps`}
+        sub={isConnected ? "live" : "reconnecting"}
+        tone="ok"
+      />
+      <div
+        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-bold uppercase tracking-wider ${readiness.cls}`}
+        title="Grid readiness derived from live threat pressure"
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${readiness.dot} animate-pulse`} />
+        {readiness.label}
+      </div>
+    </div>
+  );
+}
+
+function ScadaCell({
+  icon,
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  tone: "ok" | "warn";
+}) {
+  return (
+    <div className="rounded-lg border border-volt-line bg-black/50 px-2.5 py-1.5">
+      <div className="flex items-center gap-1 uppercase tracking-wider text-volt-muted">
+        <span className={tone === "warn" ? "text-state-warn" : "text-state-active"}>{icon}</span>
+        {label}
+      </div>
+      <div className={`mt-0.5 text-xs font-bold tabular-nums ${tone === "warn" ? "text-amber-300" : "text-white"}`}>
+        {value}
+      </div>
+      <div className="text-[8px] uppercase tracking-wider text-volt-muted/70">{sub}</div>
+    </div>
+  );
+}
+
 function GridFrequencyWidget({ grid }: { grid: GridEvent | null }) {
   const { hz, deviation, strained } = useGridFrequency(grid);
 

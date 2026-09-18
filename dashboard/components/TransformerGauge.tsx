@@ -6,14 +6,29 @@ import { Icon3DTransformer } from "./3dIcons";
 
 interface TransformerGaugeProps {
   grid: GridEvent | null;
+  /**
+   * When the fleet is scaled beyond the live backend, the page passes the
+   * effective envelope so the gauge tracks the whole (live + sim) fleet. The
+   * substation is sized at ~50 kW/bay, floored at the real 500 kVA feeder.
+   */
+  fleetSize?: number;
+  aggregateKw?: number;
+  activeCount?: number;
 }
 
-export function TransformerGauge({ grid }: TransformerGaugeProps) {
-  const capacity = grid?.transformer_capacity_kva ?? 500.0;
-  const load = grid?.total_load_kw ?? 0.0;
+export function TransformerGauge({ grid, fleetSize, aggregateKw, activeCount }: TransformerGaugeProps) {
+  const scaled = fleetSize != null && aggregateKw != null;
+  const totalStations = fleetSize ?? 8;
+
+  const capacity = scaled
+    ? Math.max(grid?.transformer_capacity_kva ?? 500, Math.round(fleetSize! * 50))
+    : grid?.transformer_capacity_kva ?? 500.0;
+  const load = scaled ? aggregateKw! : grid?.total_load_kw ?? 0.0;
   const loadPct = Math.min(Math.max((load / capacity) * 100, 0), 100);
-  const headroom = grid?.headroom_pct ?? 100.0;
-  const activeStations = grid?.active_stations ?? 0;
+  const headroom = scaled
+    ? Math.max(0, 100 - loadPct)
+    : grid?.headroom_pct ?? 100.0;
+  const activeStations = scaled ? activeCount ?? 0 : grid?.active_stations ?? 0;
 
   const getGaugeColor = () => {
     if (headroom < 10.0) return "bg-rose-500 text-rose-400";
@@ -69,7 +84,7 @@ export function TransformerGauge({ grid }: TransformerGaugeProps) {
 
       {/* Footer stats */}
       <div className="pt-2 border-t border-white/10 flex justify-between text-xs font-mono text-slate-300">
-        <span>Active Chargers: <strong className="text-volt-green">{activeStations} / 8</strong></span>
+        <span>Active Chargers: <strong className="text-volt-green">{activeStations} / {totalStations}</strong></span>
         <span>Grid Health: <strong className={headroom < 15 ? "text-amber-400 animate-pulse" : "text-emerald-400"}>
           {headroom < 10 ? "HIGH OVERLOAD RISK" : headroom < 20 ? "HIGH POWER DEMAND" : "NORMAL OPERATION"}
         </strong></span>

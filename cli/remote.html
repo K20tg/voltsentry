@@ -270,6 +270,60 @@
     }
 
     /* Tactile 3D Exploits Deck */
+    /* ARM safety interlock */
+    .arm-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 12px 14px; border-radius: 12px;
+      background: var(--screen);
+      border: 1px solid var(--line);
+      margin-bottom: 6px;
+    }
+    .arm-bar.armed { border-color: var(--rose); box-shadow: 0 0 18px -6px var(--rose-glow); }
+    .arm-status { display: flex; align-items: center; gap: 11px; }
+    .arm-lamp {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #1c4a2d; box-shadow: 0 0 8px rgba(0,255,102,0.4);
+      transition: all .2s;
+    }
+    .arm-bar.armed .arm-lamp { background: var(--rose); box-shadow: 0 0 12px var(--rose-glow); animation: armblink .8s steps(2) infinite; }
+    @keyframes armblink { 50% { opacity: .35; } }
+    .arm-title { font-size: 12px; font-weight: 700; letter-spacing: .5px; color: var(--text); }
+    .arm-bar.armed .arm-title { color: var(--rose); }
+    .arm-sub { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 2px; }
+    .arm-switch {
+      position: relative; display: inline-flex; align-items: center; justify-content: flex-start;
+      width: 76px; height: 34px; border-radius: 18px; cursor: pointer;
+      background: #0a1510; border: 1px solid var(--line-bright);
+      padding: 3px; transition: all .2s; flex-shrink: 0;
+    }
+    .arm-switch[aria-checked="true"] { background: rgba(225,29,72,0.18); border-color: var(--rose); justify-content: flex-end; }
+    .arm-knob {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: linear-gradient(180deg,#2d483f,#111a16);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.6); transition: all .2s;
+    }
+    .arm-switch[aria-checked="true"] .arm-knob { background: linear-gradient(180deg,#ff5a78,#e11d48); }
+    .arm-switch-label {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      font-size: 8px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
+      pointer-events: none;
+    }
+    .arm-switch[aria-checked="true"] .arm-switch-label { color: #fff; left: 26%; }
+
+    /* Execution log terminal */
+    .exec-log {
+      margin-top: 4px; height: 128px; overflow-y: auto;
+      background: #03080e; border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px 10px;
+      font-size: 10px; line-height: 1.55; letter-spacing: .3px;
+    }
+    .exec-line { white-space: pre-wrap; word-break: break-all; }
+    .exec-line.dim { color: var(--muted); }
+    .exec-line.tx { color: var(--accent); }
+    .exec-line.rx { color: #7fdcff; }
+    .exec-line.ok { color: var(--accent); font-weight: 700; }
+    .exec-line.err { color: var(--rose); font-weight: 700; }
+
     .attacks-deck {
       display: flex;
       flex-direction: column;
@@ -406,9 +460,29 @@
       <div class="section-label">Target Charger Port</div>
       <div class="targets-grid" id="targets"></div>
 
+      <!-- ARM safety interlock -->
+      <div class="section-label">Weapons Safety Interlock</div>
+      <div class="arm-bar" id="armBar">
+        <div class="arm-status">
+          <span class="arm-lamp" id="armLamp"></span>
+          <div>
+            <div class="arm-title" id="armTitle">SAFE — WEAPONS COLD</div>
+            <div class="arm-sub">Offensive exploits require ARM. Reset is always live.</div>
+          </div>
+        </div>
+        <button class="arm-switch" id="armSwitch" role="switch" aria-checked="false">
+          <span class="arm-knob"></span>
+          <span class="arm-switch-label">ARM</span>
+        </button>
+      </div>
+
       <!-- Exploit Action Buttons -->
       <div class="section-label">Exploit Execution Array</div>
       <div class="attacks-deck" id="attacks"></div>
+
+      <!-- Live execution log -->
+      <div class="section-label">Execution Telemetry Log</div>
+      <div class="exec-log" id="execLog"><div class="exec-line dim">[log] awaiting dispatch…</div></div>
 
       <!-- Footer Info -->
       <div class="remote-footer">
@@ -556,6 +630,13 @@
           gain.gain.setValueAtTime(0.3, now);
           gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
           osc.start(now); osc.stop(now + 0.14);
+        } else if (type === "deny") {
+          osc.type = "square";
+          osc.frequency.setValueAtTime(160, now);
+          osc.frequency.exponentialRampToValueAtTime(70, now + 0.22);
+          gain.gain.setValueAtTime(0.28, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          osc.start(now); osc.stop(now + 0.22);
         }
       } catch (e) {}
     }
@@ -675,6 +756,54 @@
       statusEl.innerHTML = html;
     }
 
+    // ---- ARM safety interlock ----
+    // Offensive exploits are gated behind ARM; reset (a safety/restore action)
+    // is always live. This is UI safety theatre for the demo — the relay itself
+    // enforces nothing — so it never blocks reset.
+    let armed = false;
+    const armBar = document.getElementById("armBar");
+    const armSwitch = document.getElementById("armSwitch");
+    const armLamp = document.getElementById("armLamp");
+    const armTitle = document.getElementById("armTitle");
+    function setArmed(v) {
+      armed = v;
+      armBar.classList.toggle("armed", v);
+      armSwitch.setAttribute("aria-checked", v ? "true" : "false");
+      armTitle.textContent = v ? "ARMED — WEAPONS HOT" : "SAFE — WEAPONS COLD";
+      playChirp(v ? "attack" : "reset");
+      haptic(v ? [40, 30, 40] : [20]);
+      logLine(v ? "[safety] interlock ARMED — offensive modules live" : "[safety] interlock SAFE", v ? "err" : "dim");
+    }
+    armSwitch.onclick = () => setArmed(!armed);
+
+    // ---- execution log ----
+    const execLog = document.getElementById("execLog");
+    function logLine(text, cls = "") {
+      const line = document.createElement("div");
+      line.className = `exec-line ${cls}`;
+      line.textContent = text;
+      execLog.appendChild(line);
+      // cap the buffer so long sessions stay light
+      while (execLog.childElementCount > 60) execLog.removeChild(execLog.firstChild);
+      execLog.scrollTop = execLog.scrollHeight;
+    }
+    const HEX = "0123456789ABCDEF";
+    function hexPacket(n = 16) {
+      let s = "";
+      for (let i = 0; i < n; i++) s += HEX[(Math.random() * 16) | 0] + HEX[(Math.random() * 16) | 0] + (i < n - 1 ? " " : "");
+      return s;
+    }
+    function streamPackets(attack, target, rounds = 3) {
+      const stamp = () => new Date().toISOString().substr(11, 12);
+      logLine(`[${stamp()}] TX ▸ ${attack.toUpperCase()} → ${target}`, "tx");
+      let i = 0;
+      const iv = setInterval(() => {
+        if (i >= rounds) { clearInterval(iv); return; }
+        logLine(`  ${hexPacket(12)}`, "tx");
+        i++;
+      }, 120);
+    }
+
     // ---- WebSocket Relay Connection ----
     let ws = null, inFlight = false;
     function setButtons(disabled) {
@@ -704,7 +833,10 @@
 
         const tag = m.ok ? '<span class="ok">✓ ACK ACCEPTED</span>' : '<span class="err">✗ REJECTED</span>';
         setStatus(`${tag}\n${m.attack ? "EXPLOIT: " + m.attack.toUpperCase() + "\n" : ""}${m.detail || ""}`);
-        
+
+        const stamp = new Date().toISOString().substr(11, 12);
+        logLine(`[${stamp}] RX ◂ ${m.ok ? "ACK" : "NAK"} ${m.detail || ""}`, m.ok ? "ok" : "err");
+
         if (m.ok) {
           haptic([30, 50, 30]);
         } else {
@@ -716,9 +848,24 @@
 
     function fire(a, btn) {
       if (!ws || ws.readyState !== 1 || inFlight) return;
+
+      // ARM gate: offensive exploits need the interlock; reset is exempt.
+      if (a.attack !== "reset" && !armed) {
+        playChirp("deny");
+        haptic([90]);
+        setStatus('<span class="err">⚠ SAFETY LOCKED</span>\nARM the interlock before launching an offensive exploit.');
+        logLine("[safety] LAUNCH BLOCKED — interlock is SAFE", "err");
+        armBar.animate(
+          [{ transform: "translateX(-4px)" }, { transform: "translateX(4px)" }, { transform: "translateX(0)" }],
+          { duration: 180, iterations: 2 }
+        );
+        return;
+      }
+
       const station_id = stationFor(a);
       inFlight = true;
       setButtons(true);
+      streamPackets(a.attack, station_id || "FLEET", a.attack === "reset" ? 1 : 3);
 
       if (a.attack === "reset") {
         playChirp("reset");

@@ -54,6 +54,43 @@ export interface ChargingTwin3DProps {
   stations: Record<string, TelemetryEvent>;
   threats: ThreatEvent[];
   stationIds: string[];
+  /** Ids that are synthesised (no live socket) — badged SIM in the legend. */
+  simIds?: Set<string>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout — single row up to 8 bays, facing dual rows beyond that      */
+/* ------------------------------------------------------------------ */
+
+const ROW_GAP = 9.0; // world-Z between the two facing rows
+
+/** World [x, z, rotationY] for bay `index` in a fleet of `count`. */
+function bayLayout(index: number, count: number): [number, number, number] {
+  if (count <= 8) {
+    const x = (index - (count - 1) / 2) * BAY_PITCH;
+    return [x, 0, 0];
+  }
+  // Dual row: front row (+z, facing -z) and back row (-z, facing +z, spun 180°).
+  const cols = Math.ceil(count / 2);
+  const row = index < cols ? 0 : 1;
+  const col = index - row * cols;
+  const colsInRow = row === 0 ? cols : count - cols;
+  const x = (col - (colsInRow - 1) / 2) * BAY_PITCH;
+  const z = row === 0 ? ROW_GAP / 2 : -ROW_GAP / 2;
+  return [x, z, row === 0 ? 0 : Math.PI];
+}
+
+/** Camera position + orbit distance sized to frame the whole fleet. */
+function cameraForCount(count: number): {
+  position: [number, number, number];
+  maxDistance: number;
+} {
+  const cols = count <= 8 ? count : Math.ceil(count / 2);
+  const span = Math.max(cols * BAY_PITCH, 18);
+  return {
+    position: [-span * 0.62, span * 0.4 + 4, span * 0.72 + 10],
+    maxDistance: span * 2 + 30,
+  };
 }
 
 interface BayRuntime {
@@ -614,10 +651,10 @@ function Bay({
   socRef.current = telemetry?.soc ?? 0;
 
   const accent = STATE_COLOR[state];
-  const x = (index - (count - 1) / 2) * BAY_PITCH;
+  const [x, z, ry] = bayLayout(index, count);
 
   return (
-    <group position={[x, 0, 0]}>
+    <group position={[x, 0, z]} rotation={[0, ry, 0]}>
       {/* bay pad */}
       <mesh position={[0.2, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[5.4, 6.4]} />
@@ -691,7 +728,7 @@ function Scene({ stations, threats, stationIds }: ChargingTwin3DProps) {
         enableDamping
         dampingFactor={0.08}
         minDistance={6}
-        maxDistance={80}
+        maxDistance={cameraForCount(stationIds.length).maxDistance}
         maxPolarAngle={Math.PI / 2 - 0.05}
         target={[0, 1.6, 0]}
       />
@@ -703,8 +740,10 @@ function Scene({ stations, threats, stationIds }: ChargingTwin3DProps) {
 /* Public component                                                    */
 /* ------------------------------------------------------------------ */
 
-export default function ChargingTwin3D({ stations, threats, stationIds }: ChargingTwin3DProps) {
+export default function ChargingTwin3D({ stations, threats, stationIds, simIds }: ChargingTwin3DProps) {
   const latest = useLatestThreats(threats);
+  const cam = cameraForCount(stationIds.length);
+  const simCount = simIds?.size ?? 0;
 
   const counts = useMemo(() => {
     let quarantined = 0;
@@ -720,12 +759,15 @@ export default function ChargingTwin3D({ stations, threats, stationIds }: Chargi
   return (
     <div className="relative w-full h-[540px] rounded-2xl overflow-hidden border border-white/10 bg-slate-950">
       <Canvas
+        // Remount when the fleet size changes so the camera re-frames the new
+        // bounding box; count changes are user-driven and infrequent.
+        key={stationIds.length}
         dpr={[1, 1.75]}
         shadows={false}
         // preserveDrawingBuffer keeps the frame readable after compositing so the
         // canvas survives screenshots and screen capture during the demo.
         gl={{ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true }}
-        camera={{ position: [-23, 10, 28], fov: 45, near: 0.1, far: 220 }}
+        camera={{ position: cam.position, fov: 45, near: 0.1, far: cam.maxDistance + 80 }}
       >
         <Scene stations={stations} threats={threats} stationIds={stationIds} />
       </Canvas>
@@ -735,6 +777,11 @@ export default function ChargingTwin3D({ stations, threats, stationIds }: Chargi
         <div className="px-3 py-1.5 rounded-lg bg-black/70 border border-white/15 text-slate-200 font-bold tracking-wider">
           DIGITAL TWIN — {stationIds.length} BAYS
         </div>
+        {simCount > 0 && (
+          <div className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-200 font-bold tracking-wider">
+            {stationIds.length - simCount} LIVE · {simCount} SIM (SCALING PREVIEW)
+          </div>
+        )}
         <div className="px-3 py-2 rounded-lg bg-black/70 border border-white/15 space-y-1">
           <LegendRow color={COLOR_CLEAN} label="CLEAN CHARGING" />
           <LegendRow color={COLOR_ANOMALY} label={`ML ANOMALY > ${ML_THRESHOLD}`} />
