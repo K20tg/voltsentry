@@ -1,13 +1,13 @@
 # VoltSentry Tier-2 training report
 
-*Generated 2026-09-07 06:45 UTC — every figure below is computed from this run.*
+*Generated 2026-09-21 18:17 UTC — every figure below is computed from this run.*
 
 ## Dataset
 
-- **Name:** VoltSentry recorded feed (replay.jsonl)
-- **File:** `C:/Users/jaira/Downloads/replay.jsonl`
+- **Name:** VoltSentry twin capture (240s honest fleet)
+- **File:** `proxy/data/honest_replay.jsonl`
 - **Sessions loaded:** 8  (train 6 / test 2)
-- **Date range actually used:** 2025-09-06 → 2025-09-06  (~8.0 sessions/day)
+- **Date range actually used:** 2026-09-21 → 2026-09-21  (~8.0 sessions/day)
 - **Provenance fields detected:** power, soc
 - **Sampling:** 1 Hz · **assumed pack capacity:** 75 kWh · **seed:** 42
 
@@ -15,9 +15,9 @@
 
 | metric | value |
 | :-- | :-- |
-| delivered energy (kWh) | mean 4.89, min 0.31, max 7.21 |
-| session duration (min) | mean 3.0, min 3.0, max 3.0 |
-| peak power (kW) | mean 118.0, max 149.9 |
+| delivered energy (kWh) | mean 7.97, min 7.94, max 7.99 |
+| session duration (min) | mean 4.0, min 4.0, max 4.0 |
+| peak power (kW) | mean 120.0, max 120.0 |
 
 ## What is real vs synthesised / approximated
 
@@ -39,11 +39,11 @@
 
 | metric | Isolation Forest | CUSUM (residual) |
 | :-- | :-- | :-- |
-| false-positive rate (honest sessions) | 0.5 | — |
+| false-positive rate (honest sessions) | 0.0 | — |
 | recall — meter_spoof | 1.0 | 1.0 |
 | recall — subtle_drift | 1.0 | 1.0 |
-| detection latency — median (s) | 2.5 | 47.0 |
-| detection latency — p90 (s) | 5.7 | — |
+| detection latency — median (s) | 0.0 | 47.5 |
+| detection latency — p90 (s) | 0.7 | — |
 
 CUSUM (`k=0.5`, `h=5.0`) is an **offline** comparison on the same residual signal; it is
 not wired into the live feed (the dashboard schema is frozen and carries no CUSUM statistic).
@@ -58,5 +58,5 @@ figure above.
 ## Reproduce
 
 ```bash
-python -m proxy.train_tier2 --data C:/Users/jaira/Downloads/replay.jsonl --name "VoltSentry recorded feed (replay.jsonl)" --capacity 75 --seed 42
+python -m proxy.train_tier2 --data proxy/data/honest_replay.jsonl --name "VoltSentry twin capture (240s honest fleet)" --capacity 75 --seed 42
 ```
